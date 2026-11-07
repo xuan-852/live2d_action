@@ -1,0 +1,23 @@
+# Unity generated outputs (future preview project)
+**/[Ll]ibrary/
+**/[Tt]emp/
+**/[Oo]bj/
+**/[Ll]ogs/
+**/[Uu]ser[Ss]ettings/
+**/[Bb]uild/
+**/[Bb]uilds/
+
+# Local experiments and large artifacts
+artifacts/
+runs/
+captures/
+local-assets/
+.venv/
+**/__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.user
+.DS_Store
+Thumbs.db

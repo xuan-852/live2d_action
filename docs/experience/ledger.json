@@ -1,0 +1,236 @@
+{
+  "schema": "action-lab-experience-ledger/v1",
+  "entries": [
+    {
+      "id": "K01",
+      "followup": {
+        "date": "2026-11-08",
+        "record": "docs/experience/20261108-continuity-isolation.md",
+        "status": "sandbox-replayed-limited-scope; no visual acceptance",
+        "finding": "两条轨迹含一条留出：整段拟合降低控制跳变和实际手部簇心步长，但目标误差增加，留出横向范围约减半；不能视为自然度或表达修复。"
+      },
+      "topic": "continuity / 跳解",
+      "evidenceStatus": "sandbox-recorded-not-replayed",
+      "claim": "11-07逐帧最近网格点候选在11-08被整批观看否决；记录有5/8单帧75–90控制跳变。",
+      "avoid": "位置可达或局部相关通过后就宣布轨迹可用；先离散选解再仅加动画平滑。",
+      "sandboxCheck": "在同一目标、真实动作时间上检查解分支/肩肘腕协调/实际画面连续性，并保留跳解负对照和留出轨迹。",
+      "sourceIds": [
+        "sandbox-batch",
+        "legacy-whole-performance"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可"
+    },
+    {
+      "id": "K02",
+      "followup": {
+        "date": "2026-11-08",
+        "record": "docs/experience/20261108-continuity-isolation.md",
+        "status": "sandbox-limited-counterexample",
+        "finding": "新增整段连续求解仍把手保留在脸侧，且部分幅度塌缩；用户反馈略好但仍有问题。对实际MP4解码复核，见手靠耳再缩入袖口附近、前臂竖起如举手的路线；时间连续性改善不等于空间路线正确。实现者定位不是用户逐帧标注。"
+      },
+      "topic": "continuity / 速度与空间路线",
+      "evidenceStatus": "legacy-recorded-not-replayed",
+      "claim": "旧线位置连续仍出现速度硬台阶；材料点代理限速能降低突变，但用户仍否决不合理的上行肘路线。",
+      "avoid": "把重定时或参数限速当成空间路线修复；把倒用一条已认可下降路线当作通用学习。",
+      "sandboxCheck": "分别检验位置、速度/加速度、空间路线、相位节奏；共同规则改进必须在新轨迹有效，不能只复演旧下降段。",
+      "sourceIds": [
+        "legacy-continuity",
+        "legacy-whole-performance"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可"
+    },
+    {
+      "id": "K03",
+      "relationalTrial": {
+        "record": "docs/RELATIONAL-EXPRESSION.md",
+        "status": "completed-proxy-benefit-visual-limitations-no-acceptance",
+        "correction": "原novel-12/14/21均已暴露；新03/06/07/11只称本轮未用于调整，不称全局未见。新候选以身体归一化双肘双腕和双腕关系替代方向迁移，不以指标改进宣布自然度通过。"
+      },
+      "topic": "expression / 绝对关系与增量",
+      "evidenceStatus": "sandbox-recorded-not-replayed",
+      "claim": "只比较减首帧后的运动增量会抹去手相对胸口的绝对位置；新批次横向pass漏掉了严重纵向损失。",
+      "avoid": "把纯绝对坐标复制或纯增量相关中的任意一种当作完整语义保留；把相关系数重复当两个指标。",
+      "sandboxCheck": "同时观察身体归一化的绝对位置、双臂关系、目标变化、强调时刻和保持；先验证度量会拒绝捂胸替代摊手。",
+      "sourceIds": [
+        "sandbox-batch",
+        "conversation-feedback"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可"
+    },
+    {
+      "id": "K04",
+      "topic": "expression / 整体表演",
+      "evidenceStatus": "user-feedback",
+      "claim": "用户能从源骨架读出摊手说明，但成品读成捂胸；旧两分钟仅得到大体自然的反馈。",
+      "avoid": "把骨架匹配当最终目标，或把每个新片段手工K好再宣称扩展方法成立。",
+      "sandboxCheck": "表达目标与头脸、躯干、双臂及节奏共同组织；允许二维改编，但多条留出轨迹仍须保留可读目标。",
+      "sourceIds": [
+        "conversation-feedback",
+        "legacy-generated-summary",
+        "sandbox-batch"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可",
+      "frameKnown": false
+    },
+    {
+      "id": "K05",
+      "topic": "physics / 写入者",
+      "evidenceStatus": "sandbox-recorded-not-replayed",
+      "claim": "当前X2属于physics3输出；显式曲线与物理竞争会覆写。沙盒coordinated记录停用匹配X2输出权重，其他物理保留。旧线另有通过输入端驱动物理的方案。",
+      "avoid": "把所有Body通道统一当独立参数；为了显式动画把全体物理关闭；把旧输入/输出选择硬搬到新配置。",
+      "sandboxCheck": "按当前physics3明确每个通道所有权、先后次序与请求/应用读回；比较物理开启/关闭的可见贡献。",
+      "sourceIds": [
+        "sandbox-preview",
+        "legacy-scale"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可"
+    },
+    {
+      "id": "K06",
+      "topic": "model / 地标与真实响应",
+      "evidenceStatus": "sandbox-recorded-not-replayed",
+      "claim": "本地5-r.4曾因稳定化先于输入缓存初始化，使X2/Z2输出为零。旧调查还因把臂部网格当头部地标而误判Angle参数死亡。",
+      "avoid": "依据参数名、一次零位移或错误地标宣布通道无效/轴向不对；把头部动作直接绑定手腕高度。",
+      "sandboxCheck": "核对初始化、实际画件归属、物理竞争和独立画面；旧headWorld补偿仅作候选，不假定新SDK耦合相同。",
+      "sourceIds": [
+        "sandbox-preview",
+        "sandbox-batch",
+        "legacy-head"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可"
+    },
+    {
+      "id": "K07",
+      "topic": "capture / 同帧与绘制",
+      "evidenceStatus": "sandbox-recorded-not-replayed",
+      "claim": "沙盒离线步进曾有renderer双缓冲一帧错位，LabMotion记录额外交换及pairingMaxDelta；旧线独立Core重建也不能替代实际消费网格。",
+      "avoid": "用参数已写入、部分顶点或局部状态证明整模型/最终像素都正确；沿用旧程序集pin。",
+      "sandboxCheck": "核对当前写入→Core→physics→renderer→mask→相机顺序及实际缓冲；pairingMaxDelta只覆盖其定义范围，UV/材质/遮罩/物理内部缺项仍需标注。",
+      "sourceIds": [
+        "sandbox-preview",
+        "sandbox-batch",
+        "legacy-full-execution"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可"
+    },
+    {
+      "id": "K08",
+      "wholeCapabilityFollowup": {
+        "date": "2026-11-08",
+        "record": "docs/WHOLE-CAPABILITY.md",
+        "finding": "最小提取补丁变形和肩根连接，原8案例双臂恢复运行；原生全链Core后端复用后未明显改善双腕绝对关系。能力恢复不等于语义恢复，留出未获人工认可。"
+      },
+      "topic": "identity / 双臂",
+      "evidenceStatus": "legacy-recorded-not-replayed",
+      "claim": "旧profile用肩根维持rootLeft/rootRight；旧落手问题曾被错误归到补丁臂，后由原生臂响应纠正。新批次又记录了left目标配right斜率的交叉使用。",
+      "avoid": "把参数显示名、解剖侧、静止画面侧混用，或让手跨中线后换身份。",
+      "sandboxCheck": "建立当前模型的明确侧向对应，源目标/求导/实际采集全链一致；原生和补丁实际网格分别观测。",
+      "sourceIds": [
+        "legacy-wrist",
+        "sandbox-batch"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可"
+    },
+    {
+      "id": "K09",
+      "layerProjectionFollowup": {
+        "date": "2026-11-08",
+        "record": "docs/experience/20261108-layer-projection.md",
+        "finding": "两案例补丁侧遮挡/缩短隔离均改变画面；旧八轨depth全为前景。极端排序只是诊断，不作为衣物层序方案；原生侧和源深度驱动仍待验证，掌面仍unknown。"
+      },
+      "topic": "hand / 源信息与画件",
+      "evidenceStatus": "legacy-recorded-not-replayed",
+      "claim": "旧MMD完整canonical有50骨含38指骨，精简旁车缺这些字段；旧交叠窗实际是shear饱和而非掌面奇偶翻转。Param92/93曾切换隐藏画件，但形态未由该调查确认。",
+      "avoid": "把缺精简字段说成缺源数据；用一标量驱动六根指曲线；把隐藏件存在说成已确认掌背；用压扁补足未知朝向。",
+      "sandboxCheck": "分别检查完整源、传输字段、白名单、实际画件与可见朝向；MMD指骨结论不套用到T2M22点。",
+      "sourceIds": [
+        "legacy-wrist",
+        "legacy-whole-performance",
+        "sandbox-batch"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可",
+      "supersededClaims": [
+        "参考完全缺指根",
+        "交叠窗是palmWidth触底",
+        "无法镜像就解释该窗根因"
+      ]
+    },
+    {
+      "id": "K10",
+      "topic": "source / 表情与动作内容",
+      "evidenceStatus": "legacy-recorded-not-replayed",
+      "claim": "旧三条VMD的morphTracks为0；T2M22点接口明确缺掌面/手指/脸和头部朝向。文件名不能证明动作语义或面部轨道存在。",
+      "avoid": "没有数据却说表情已导入，或凭mouth/guard名字给动作定含义。",
+      "sandboxCheck": "先查源轨道和真实姿态；本地补充表情策略可独立实验，但明确其来源，不能说来自源数据。",
+      "sourceIds": [
+        "legacy-continuity",
+        "legacy-whole-performance",
+        "legacy-head"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可"
+    },
+    {
+      "id": "K11",
+      "workbuddyFollowup": {
+        "record": "docs/experience/20261109-workbuddy-loop.md",
+        "status": "single-case-completed-no-human-acceptance",
+        "finding": "免费Hy4桌面UI完成独立观察、目标反馈、一次实际修订与前后复评。能指出修改过度，支持反馈闭环可行；同会话偏差和自我纠正存在，不支持自动标签/奖励认证。"
+      },
+      "topic": "evaluation / 视觉评委",
+      "evidenceStatus": "legacy-recorded-not-replayed",
+      "claim": "旧冻结试验的细微差异定位、跨中线身份与自然度判断不能支撑自动筛选/奖励；局部事实任务有窄范围通过。",
+      "avoid": "继承一个总体准确率，或让单个视觉模型的好坏判断直接晋级控制器；把报告中的视频端点归因矛盾当确定事实。",
+      "sandboxCheck": "若重启视觉评审，先定义任务/真值/阳性阴性对照/unknown及留出集，按当前实际模型与输入路径重新测；沙盒任务不自动授权付费请求。",
+      "sourceIds": [
+        "legacy-visual"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可"
+    },
+    {
+      "id": "K12",
+      "topic": "learning / 规模与收益",
+      "evidenceStatus": "legacy-recorded-not-replayed",
+      "claim": "10-27特定冻结实验的RBF/MLP/kNN在留出族上未胜冻结控制器；可靠上游数据仍依赖整合。这是该实验的负结果。",
+      "avoid": "宣称加数据必然成长，或反向推论神经网络永远无用；把旧缺字段/内存失败当作当前仍未修。",
+      "sandboxCheck": "先明确学习对象、观测与目标有效性，比较简单基线及训练前后留出收益，再决定训练规模与成本。",
+      "sourceIds": [
+        "legacy-scale"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可"
+    },
+    {
+      "id": "K13",
+      "topic": "resources / 单核与发布",
+      "evidenceStatus": "legacy-recorded-not-replayed",
+      "claim": "受限单核下多线程BLAS曾从0.19s变成150s无输出；固定线程恢复。10-30生成Job峰值2327MB，独立Probe约310MB，仅绑定该开发机与构建。",
+      "avoid": "把2%/256MB分析预算套所有构建；把软件限速当低端机认证；在桌宠启动时常驻完整生成环境。",
+      "sandboxCheck": "分析/构建/生成/播放分开预算，重任务串行、记录真实耗时和所有进程归属；发布轻量执行与可选生成分开，仍需低端实机。",
+      "sourceIds": [
+        "legacy-scale",
+        "legacy-generated-summary",
+        "legacy-whole-performance"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可"
+    },
+    {
+      "id": "K14",
+      "topic": "acceptance / 认可范围与采样",
+      "evidenceStatus": "user-feedback",
+      "claim": "旧128.914s观察含19段新生成适配结果，用户仅认可大体自然并指出语义损失。当前11-07八案例已被用户整批否决；两轮版本与评价不可混用。",
+      "avoid": "把旧19段认可移给新8段；把VFR/固定fps封装当缺帧补足；把机器通过当人工认可。",
+      "sandboxCheck": "反馈绑定模型/动作/适配/采集版本与时间范围，记录未知帧；动作采样时间、墙钟和视频时间各自保留，正常桌面尺寸集中观看。",
+      "sourceIds": [
+        "conversation-feedback",
+        "legacy-generated-summary",
+        "sandbox-batch",
+        "sandbox-preview"
+      ],
+      "inheritable": "问题机制、调查顺序和反例；不继承具体版本PASS/参数常数/认可"
+    }
+  ],
+  "acceptance": {
+    "humanAccepted": false,
+    "automaticCertification": false,
+    "knowledgeTransferOnly": true
+  }
+}

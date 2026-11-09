@@ -1,0 +1,58 @@
+[
+  {
+    "source": "D:\\Unity\\projects\\Desktop_per_pro\\Build\\w\\hp\\scripts\\live2d\\retarget\\core_model.py",
+    "sourceSha256": "321c37941a4e38cca4a80f19628d4f7027ede00a73f25b1f7515e9b8de8ffe0b",
+    "target": "tools/whole/recovered/core_model.py",
+    "targetSha256": "187ae495b948e79ca7414877ebc9849b86c406fb3b7d7d18982abb75e85096b9",
+    "selection": "Complete small pure Core/anchor module; relative import only",
+    "license": "User project implementation; no standalone license identified. Local research only; no redistribution permission inferred."
+  },
+  {
+    "source": "D:\\Unity\\projects\\Desktop_per_pro\\Build\\w\\hp\\scripts\\live2d\\retarget\\anchors.py",
+    "sourceSha256": "c28b0dd793f3d1a5ba146b057984ddc04c4e4a84771bf16b05f321245aaf0444",
+    "target": "tools/whole/recovered/anchors.py",
+    "targetSha256": "bf0837b1f0e1510257a78067cb2d65880a569c69f45faefcb3ff0926b1fbc875",
+    "selection": "Complete small pure Core/anchor module; relative import only",
+    "license": "User project implementation; no standalone license identified. Local research only; no redistribution permission inferred."
+  },
+  {
+    "source": "D:\\Unity\\projects\\Desktop_per_pro\\Build\\w\\hp\\scripts\\live2d\\retarget-foundation\\backends.py",
+    "sourceSha256": "89dee25b3cee2fbe62d1bc030eaadc8144c5a88b436d72e83d25ad636c74f04b",
+    "target": "tools/whole/recovered/native.py",
+    "targetSha256": "37d767f46bf56f05ff7aefc6b0f512955d14ad356a191b06e4ce2aa8e7601f68",
+    "selection": "NativeArm and pure helpers only; PatchArm excluded",
+    "license": "User project implementation; no standalone license identified. Local research only; no redistribution permission inferred."
+  },
+  {
+    "source": "D:\\Unity\\projects\\Desktop_per_pro\\Build\\w\\hp\\scripts\\live2d\\retarget-foundation\\calibration\\model-arm-calibration.json",
+    "sourceSha256": "e8c523be9356cbc1fafe64e9a5fc07ac982916187329a62cbb49671240e9887f",
+    "target": "tools/whole/recovered/calibration.json",
+    "targetSha256": "ca2409f13ad874dafc06911e356e7bcdf62de95d1d794bf8ec7725dcde783b40",
+    "selection": "Versioned calibration candidate; remeasure against local Core",
+    "license": "User project implementation; no standalone license identified. Local research only; no redistribution permission inferred."
+  },
+  {
+    "source": "D:\\Unity\\projects\\Desktop_per_pro\\code\\desktop_unity\\Assets\\Scripts\\Embodied\\SecondaryArmPatch.cs",
+    "sourceSha256": "d9a58e07a989cefd2f5b256701ff6fedb13d6d4d1f2a75cb3ed6d88971e52bc3",
+    "target": "preview/unity/RecoveredArmGeometry.cs",
+    "targetSha256": "b531d392107f8976e4d6de742c24bf95c313d19c6231a31837fe686cc4762975",
+    "selection": "TargetIds/cloth exclusions/rest anchors/candidate bounds/pure deformation only; no playback/coordinator/IO",
+    "license": "User project implementation; no standalone license identified. Local research only; no redistribution permission inferred."
+  },
+  {
+    "source": "D:\\Unity\\projects\\Desktop_per_pro\\code\\desktop_unity\\Assets\\Scripts\\Embodied\\ShoulderConnection.cs",
+    "sourceSha256": "10609a54421407c6bf58128e5df8711be47abd6ca10613697950e6a1ce86965d",
+    "target": "preview/unity/RecoveredShoulderConnection.cs",
+    "targetSha256": "41438f5869a0885f327f27e42dc125c8203b78e297f6ce17525b3942fa92a3b2",
+    "selection": "Pure material attachment and observations; geometry class renamed",
+    "license": "User project implementation; no standalone license identified. Local research only; no redistribution permission inferred."
+  },
+  {
+    "source": "D:\\Unity\\projects\\Desktop_per_pro\\code\\desktop_unity\\Assets\\Scripts\\Embodied\\SecondaryArmMotion.cs",
+    "sourceSha256": "d18845ef695ba36526fed7607ba4e2df3605acccfd7c3d47138fdf83276b0769",
+    "target": "preview/unity/RecoveredArmTypes.cs",
+    "targetSha256": "cb46e772625a3d1bd387d8c968724d652922c4bb52bb024ac847b8bf90d622e4",
+    "selection": "Projection and girdle values only; no Newtonsoft or motion contract",
+    "license": "User project implementation; no standalone license identified. Local research only; no redistribution permission inferred."
+  }
+]

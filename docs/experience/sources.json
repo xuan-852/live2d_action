@@ -1,0 +1,116 @@
+{
+  "schema": "action-lab-experience-sources/v1",
+  "checkedAt": "2026-11-08T15:56:29.242223+08:00",
+  "scope": "Knowledge transfer only; no experiments replayed, no runtime dependency on external paths",
+  "sources": [
+    {
+      "id": "sandbox-preview",
+      "kind": "repo",
+      "path": "preview/README.md",
+      "sha256": "25012ef612ffd1504e4d94d5bd522560f19e2a3f2f49a8880310033bff8b55dd",
+      "bytes": 10966,
+      "availableAtTransfer": true,
+      "checked": "file existence/content excerpt/SHA only; experiment not rerun",
+      "scope": "当前原生预览、物理初始化、X2与旧采集一帧错位；仅文档核对"
+    },
+    {
+      "id": "sandbox-batch",
+      "kind": "repo",
+      "path": "docs/EXPRESSION-BATCH.md",
+      "sha256": "3f2a65f2c9aa8f0e8654e06054992bda179ef938d1bb5b74a42da2932ae91111",
+      "bytes": 9941,
+      "availableAtTransfer": true,
+      "checked": "file existence/content excerpt/SHA only; experiment not rerun",
+      "scope": "顶部2026-11-08纠正优先：整批观看失败；下文7/8不构成质量通过"
+    },
+    {
+      "id": "legacy-continuity",
+      "kind": "external",
+      "path": "E:/FuXuanLab/runs/20261028-motion-continuity-01/REPORT.md",
+      "sha256": "7e881a4709877196ad4794585af974cfc72059980da4ff48b5569b56236d415b",
+      "bytes": 15253,
+      "availableAtTransfer": true,
+      "checked": "file existence/content excerpt/SHA only; experiment not rerun",
+      "scope": "旧版目标轨迹不均匀/速度台阶与共同起势修正；不自动移植旧速度常数"
+    },
+    {
+      "id": "legacy-wrist",
+      "kind": "external",
+      "path": "E:/FuXuanLab/runs/20261028-wrist-hand-isolation-02/REPORT.md",
+      "sha256": "da3a319a7faabbecf2cd84636643373bcad007d1124e44a129657eec115b3813",
+      "bytes": 19934,
+      "availableAtTransfer": true,
+      "checked": "file existence/content excerpt/SHA only; experiment not rerun",
+      "scope": "第二轮纠正优先：完整canonical含指根、shear饱和、原生/补丁分开归因"
+    },
+    {
+      "id": "legacy-head",
+      "kind": "external",
+      "path": "D:/Unity/projects/Desktop_per_pro/Build/w/hp/docs/evidence/mmd-expression-basis-20261024.md",
+      "sha256": "ed9c02787986c98c2e99347acc3a29c3a00f9c927566968175424c2a2b3310d8",
+      "bytes": 36642,
+      "availableAtTransfer": true,
+      "checked": "file existence/content excerpt/SHA only; experiment not rerun",
+      "scope": "第十一节：用错头部地标被纠正；世界/局部路由是该版本实测，不是通用公式"
+    },
+    {
+      "id": "legacy-scale",
+      "kind": "external",
+      "path": "D:/Unity/projects/Desktop_per_pro/docs/evidence/body-learning-scale-20261027.md",
+      "sha256": "3a286d8a34d61e5d9cf7ca7aba0c8dea537866f32386bb65466d6ad72bdcfd05",
+      "bytes": 4995,
+      "availableAtTransfer": true,
+      "checked": "file existence/content excerpt/SHA only; experiment not rerun",
+      "scope": "限定旧实验的学习无收益、上游缺字段和受限BLAS卡顿；后续路线不能直接继承旧阻塞状态"
+    },
+    {
+      "id": "legacy-full-execution",
+      "kind": "external",
+      "path": "E:/FuXuanLab/runs/20261029-full-body-execution-01/REPORT.md",
+      "sha256": "7568d68768f0ff114af1e72c8175026d4f01aab48d6fdb2c0393ac47522acb62",
+      "bytes": 6006,
+      "availableAtTransfer": true,
+      "checked": "file existence/content excerpt/SHA only; experiment not rerun",
+      "scope": "同事务实际网格与完整执行；旧通过不代替独立SDK沙盒复验"
+    },
+    {
+      "id": "legacy-whole-performance",
+      "kind": "external",
+      "path": "D:/Unity/projects/Desktop_per_pro/scripts/live2d/whole-performance/README.md",
+      "sha256": "595ace2e1e7ce60c2928e96855592a2f3accabb7f40a5b37cba9fefafcf8ec50",
+      "bytes": 9311,
+      "availableAtTransfer": true,
+      "checked": "file existence/content excerpt/SHA only; experiment not rerun",
+      "scope": "新轨迹、材料时间、空间路线与float核对问题；非可自动移植模块"
+    },
+    {
+      "id": "legacy-generated-summary",
+      "kind": "external",
+      "path": "E:/FuXuanLab/runs/20261030-generated-observation-04/summary.json",
+      "sha256": "6327b5969ec94bdc6af7226e05cd2f9f580d722ce056b5ab8683e0389d6e0f6f",
+      "bytes": 1405,
+      "availableAtTransfer": true,
+      "checked": "file existence/content excerpt/SHA only; experiment not rerun",
+      "scope": "36源/19实录及资源数字只绑定该构建和受限开发机"
+    },
+    {
+      "id": "legacy-visual",
+      "kind": "external",
+      "path": "E:/FuXuanLab/archive/experiments/visual-judge-comprehensive-20261025-01/final/CONCLUSION.md",
+      "sha256": "6c551e984fc88168ef314f74206fb97f3af56b348cc7a970c01720be9a041645",
+      "bytes": 3264,
+      "availableAtTransfer": true,
+      "checked": "file existence/content excerpt/SHA only; experiment not rerun",
+      "scope": "只采纳任务边界与失败记录；端点静默丢视频说法与调用器修复叙述有冲突，不继承该归因"
+    },
+    {
+      "id": "conversation-feedback",
+      "kind": "conversation",
+      "availableAtTransfer": true,
+      "path": null,
+      "sha256": null,
+      "scope": "承接本会话用户原话的摘要；无精确帧号和逐条发言时间，不作为全批标签",
+      "excerpt": "动作大体自然但不清楚含义；看源骨架像摊手说明，符玄实际像捂胸；应按整体框架适配Live2D，避免逐条手工修补。"
+    }
+  ]
+}

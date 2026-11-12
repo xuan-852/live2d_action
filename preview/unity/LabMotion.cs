@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -38,6 +38,8 @@ public static class LabMotion
         public PartState[] parts; public DrawableGeometry[] drawables;
         public double renderReadbackMs;
         public WholeArmSession.Readback wholeArms;
+        public float[] goal, goalScreen, actualScreen;
+        public float[] nativeNodeScreen, patchNodeScreen;
     }
 
     static object Load(Type type, string path)
@@ -176,6 +178,31 @@ public static class LabMotion
     {
         frame.pairingMaxDelta = PresentCurrent(scene);
         if (scene.Whole != null) { scene.Whole.Apply(frame.frame); frame.wholeArms=scene.Whole.Current; }
+        if(frame.wholeArms!=null)
+        {
+            float[][] chains={frame.wholeArms.nativeChain,frame.wholeArms.patchChain};
+            float[][] screens=new float[2][];
+            for(int side=0;side<2;side++)
+            {
+                screens[side]=new float[chains[side].Length];
+                for(int j=0;j<chains[side].Length;j+=2)
+                {
+                    var v=scene.Camera.WorldToScreenPoint(scene.Model.transform.TransformPoint(new Vector3(chains[side][j],chains[side][j+1],0)));
+                    screens[side][j]=v.x;screens[side][j+1]=1024-v.y;
+                }
+            }
+            frame.nativeNodeScreen=screens[0];frame.patchNodeScreen=screens[1];
+        }
+        if(frame.goal!=null && frame.wholeArms!=null)
+        {
+            frame.actualScreen=new float[4];
+            for(int j=0;j<2;j++)
+            {
+                var chain=frame.wholeArms.nativeChain;
+                var p=scene.Camera.WorldToScreenPoint(scene.Model.transform.TransformPoint(new Vector3(chain[2+j*2],chain[3+j*2],0)));
+                frame.actualScreen[j*2]=p.x;frame.actualScreen[j*2+1]=1024-p.y;
+            }
+        }
         var watch = Stopwatch.StartNew();
         scene.Camera.Render();
         RenderTexture.active = scene.Target;
@@ -292,15 +319,16 @@ public static class LabMotion
         Time.fixedDeltaTime = 1f / 30;
         scene.Physics.enabled = enabled;
         if (!enabled) return;
-        if (excludeX2)
+        var physicsOverride=Environment.GetEnvironmentVariable("ACTION_LAB_PHYSICS_OVERRIDE");
+        if (excludeX2 || !string.IsNullOrEmpty(physicsOverride))
         {
             var modelJson = CubismModel3Json.LoadAtPath(modelPath, Load);
-            var rig = CubismPhysics3Json.LoadFrom(modelJson.Physics3Json).ToRig();
+            var rig = CubismPhysics3Json.LoadFrom(string.IsNullOrEmpty(physicsOverride)?modelJson.Physics3Json:File.ReadAllText(physicsOverride)).ToRig();
             var excluded = 0;
             foreach (var sub in rig.SubRigs)
                 for (var i = 0; i < sub.Output.Length; i++)
-                    if (sub.Output[i].DestinationId == "ParamBodyAngleX2") { sub.Output[i].Weight = 0; excluded++; }
-            if (excluded != 1) throw new Exception("Expected exactly one X2 physics output, got " + excluded);
+                    if (excludeX2 && sub.Output[i].DestinationId == "ParamBodyAngleX2") { sub.Output[i].Weight = 0; excluded++; }
+            if (excludeX2 && excluded != 1) throw new Exception("Expected exactly one X2 physics output, got " + excluded);
             scene.Physics.Initialize(rig);
         }
         scene.Physics.OnLateUpdate();
@@ -359,6 +387,180 @@ public static class LabMotion
             EditorApplication.Exit(0);
         }
         catch (Exception e) { UnityEngine.Debug.LogException(e); EditorApplication.Exit(1); }
+    }
+
+    [Serializable] public class ControlCommand { public float[] q, body, goal, head; public WholeArmSession.Pose patch; }
+
+    [Serializable] public class StatefulCommand
+    {
+        public float[] q, body, headBody;
+        public WholeArmSession.Pose patch;
+    }
+
+    static string ReadStatefulCommand(string path)
+    {
+        // An atomically published file can still briefly retain a Windows rename
+        // handle. Permit delete sharing and retry only sharing/lock violations;
+        // invalid content and unrelated IO errors must remain visible failures.
+        var watch=Stopwatch.StartNew();
+        while(true)
+        {
+            try
+            {
+                using(var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete))
+                using(var reader=new StreamReader(stream)) return reader.ReadToEnd();
+            }
+            catch(IOException e)
+            {
+                int code=e.HResult&0xffff;
+                if((code!=32&&code!=33)||watch.ElapsedMilliseconds>=2000) throw;
+                System.Threading.Thread.Sleep(5);
+            }
+        }
+    }
+
+    // Separate opt-in protocol: never changes previous experimental entry points.
+    public static void RunStatefulControl()
+    {
+        try
+        {
+            var output=Required("ACTION_LAB_OUTPUT"); Guard(output);
+            var scene=BuildScene(Required("ACTION_LAB_MODEL"),output);
+            bool physics=Required("ACTION_LAB_STATEFUL_PHYSICS")=="on";
+            ConfigurePhysics(scene,Required("ACTION_LAB_MODEL"),physics,false);
+            int count=int.Parse(Required("ACTION_LAB_CONTROL_FRAMES"));
+            var bridge=Required("ACTION_LAB_CONTROL_BRIDGE");
+            bool fiveAxes=Environment.GetEnvironmentVariable("ACTION_LAB_STATEFUL_NATIVE_AXES")=="5";
+            string[] ids=fiveAxes?new[]{"Param94","Param95","Param97","Param98","Param99","ParamBodyAngleX","ParamBodyAngleY"}:
+                new[]{"Param94","Param97","Param99","ParamBodyAngleX","ParamBodyAngleY"};
+            int nativeAxes=fiveAxes?5:3;
+            var speedText=Environment.GetEnvironmentVariable("ACTION_LAB_STATEFUL_PARAMETER_SPEED");
+            float parameterSpeed=string.IsNullOrEmpty(speedText)?45f:
+                float.Parse(speedText,System.Globalization.CultureInfo.InvariantCulture);
+            if(float.IsNaN(parameterSpeed)||float.IsInfinity(parameterSpeed)||parameterSpeed<=0||parameterSpeed>(fiveAxes?2700:180))
+                throw new ArgumentException("Stateful speed budget");
+            float frameSlew=parameterSpeed/30f;
+            float[] previous=new float[nativeAxes];
+            for(int i=0;i<count;i++)
+            {
+                string path=Path.Combine(bridge,i.ToString("D4")+".command.json");
+                var wait=Stopwatch.StartNew();
+                while(!File.Exists(path))
+                {
+                    if(wait.Elapsed.TotalSeconds>60) throw new TimeoutException("Stateful command "+i);
+                    System.Threading.Thread.Sleep(5);
+                }
+                var cmd=JsonUtility.FromJson<StatefulCommand>(ReadStatefulCommand(path));
+                if(cmd.q==null || cmd.q.Length!=nativeAxes || cmd.body==null || cmd.body.Length!=2 || cmd.patch==null)
+                    throw new ArgumentException("Stateful dimensions");
+                float[] values=cmd.q.Concat(cmd.body).ToArray();
+                for(int j=0;j<ids.Length;j++)
+                {
+                    var p=scene.Model.Parameters.Single(v=>v.Id==ids[j]); float v=values[j];
+                    if(float.IsNaN(v)||float.IsInfinity(v)||v<p.MinimumValue||v>p.MaximumValue)
+                        throw new ArgumentException("Stateful parameter bounds");
+                    if(j<nativeAxes && Mathf.Abs(v-previous[j])>frameSlew+.0001f) throw new ArgumentException("Stateful frame slew");
+                    p.Value=v;
+                }
+                previous=cmd.q;
+                if(cmd.headBody!=null)
+                {
+                    if(cmd.headBody.Length!=6) throw new ArgumentException("Stateful head/body dimensions");
+                    string[] contextIds={"ParamAngleX","ParamAngleY","ParamAngleZ","ParamBodyAngleX","ParamBodyAngleY","ParamBodyAngleZ"};
+                    for(int j=0;j<contextIds.Length;j++)
+                    {
+                        var p=scene.Model.Parameters.Single(v=>v.Id==contextIds[j]); float v=cmd.headBody[j];
+                        if(float.IsNaN(v)||float.IsInfinity(v)||v<p.MinimumValue||v>p.MaximumValue)
+                            throw new ArgumentException("Stateful head/body bounds");
+                        p.Value=v;
+                    }
+                }
+                scene.Whole.ControlPose=cmd.patch;
+                var requested=Snapshot(scene.Model);
+                if(physics && i>0) scene.Physics.OnLateUpdate();
+                scene.Model.ForceUpdateNow(); scene.Render.OnLateUpdate();
+                if(scene.Masks!=null) scene.Masks.OnLateUpdate();
+                WriteFrame(scene,output,new Frame { frame=i,actionTime=i/30.0,
+                    physicsState=physics?"SDK fixed dt=1/30, original rig":"disabled",
+                    requested=requested,applied=Snapshot(scene.Model),
+                    writers=new[]{"stateful arm command","SDK/Core","final mesh readback"},
+                    parts=scene.Model.Parts.Select(p=>new PartState{id=p.Id,opacity=p.Opacity}).ToArray() },null);
+                File.WriteAllText(Path.Combine(bridge,i.ToString("D4")+".ready"),"ok");
+            }
+            Finish(scene,output,"stateful arms; fixed action time; not realtime"); EditorApplication.Exit(0);
+        }
+        catch(Exception e) { UnityEngine.Debug.LogException(e); EditorApplication.Exit(1); }
+    }
+
+    public static void RunControl()
+    {
+        try
+        {
+            var output=Required("ACTION_LAB_OUTPUT"); Guard(output);
+            var scene=BuildScene(Required("ACTION_LAB_MODEL"),output);
+            ConfigurePhysics(scene,Required("ACTION_LAB_MODEL"),true,false);
+            int count=int.Parse(Required("ACTION_LAB_CONTROL_FRAMES"));
+            var bridge=Required("ACTION_LAB_CONTROL_BRIDGE");
+            float[] previous={0,0};
+            for(int i=0;i<count;i++)
+            {
+                string path=Path.Combine(bridge,i.ToString("D4")+".command.json");
+                var wait=Stopwatch.StartNew();
+                while(!File.Exists(path))
+                {
+                    if(wait.Elapsed.TotalSeconds>60) throw new TimeoutException("Control command "+i);
+                    System.Threading.Thread.Sleep(5);
+                }
+                var cmd=JsonUtility.FromJson<ControlCommand>(File.ReadAllText(path));
+                if(cmd.q.Length!=2 || cmd.body.Length!=2 || cmd.goal.Length!=4) throw new Exception("Control dimensions");
+                string[] ids={"Param94","Param97","ParamBodyAngleX","ParamBodyAngleY"};
+                float[] values={cmd.q[0],cmd.q[1],cmd.body[0],cmd.body[1]};
+                for(int j=0;j<4;j++)
+                {
+                    var p=scene.Model.Parameters.Single(v=>v.Id==ids[j]);
+                    float v=values[j];
+                    if(float.IsNaN(v)||float.IsInfinity(v)||v<p.MinimumValue||v>p.MaximumValue) throw new Exception("Control bounds");
+                    if(j<2 && Mathf.Abs(v-previous[j])>1.5001f) throw new Exception("Control slew");
+                    p.Value=v;
+                }
+                previous=cmd.q;
+                if(cmd.patch!=null)
+                {
+                    if(scene.Whole==null) throw new Exception("Patch requires whole session");
+                    scene.Whole.ControlPose=cmd.patch;
+                }
+                if(cmd.head!=null)
+                {
+                    if(cmd.head.Length!=3) throw new Exception("Head dimensions");
+                    string[] headIds={"ParamAngleX","ParamAngleY","ParamAngleZ"};
+                    for(int j=0;j<3;j++)
+                    {
+                        float v=cmd.head[j];
+                        if(float.IsNaN(v)||float.IsInfinity(v)||Mathf.Abs(v)>15) throw new Exception("Head bound");
+                        scene.Model.Parameters.Single(p=>p.Id==headIds[j]).Value=v;
+                    }
+                }
+                var requested=Snapshot(scene.Model);
+                if(i>0) scene.Physics.OnLateUpdate();
+                scene.Model.ForceUpdateNow(); scene.Render.OnLateUpdate();
+                if(scene.Masks!=null) scene.Masks.OnLateUpdate();
+                var frame=new Frame { frame=i, actionTime=i/30.0, goal=cmd.goal,
+                    physicsState="sdk physics fixed dt=1/30; interactive feedback",
+                    requested=requested, applied=Snapshot(scene.Model),
+                    writers=new[]{"bounded feedback command", "sdk physics", "Core/render"},
+                    parts=scene.Model.Parts.Select(p=>new PartState{id=p.Id,opacity=p.Opacity}).ToArray() };
+                frame.goalScreen=new float[4];
+                for(int j=0;j<2;j++)
+                {
+                    var v=scene.Camera.WorldToScreenPoint(scene.Model.transform.TransformPoint(new Vector3(cmd.goal[j*2],cmd.goal[j*2+1],0)));
+                    frame.goalScreen[j*2]=v.x; frame.goalScreen[j*2+1]=1024-v.y;
+                }
+                WriteFrame(scene,output,frame,null);
+                File.WriteAllText(Path.Combine(bridge,i.ToString("D4")+".ready"),"ok");
+            }
+            Finish(scene,output,"interactive control; fixed action time, not realtime"); EditorApplication.Exit(0);
+        }
+        catch(Exception e) { UnityEngine.Debug.LogException(e); EditorApplication.Exit(1); }
     }
 
     public static void RunMotion()

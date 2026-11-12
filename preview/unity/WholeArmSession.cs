@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
@@ -25,15 +25,21 @@ public sealed class WholeArmSession
         // intentionally extreme front/back test, not a garment-layer solution.
         public string layerPolicy = "legacy-z";
         public bool rootedUpper;
+        public bool nativeDistalFront;
+        public float[] correctedPatchNodes;
     }
     [Serializable] public class Readback
     {
-        public float[] nativeChain, patchChain;
+        public float[] nativeChain, patchChain, sourcePatchChain;
+        public float[] areaGradient, patchActuators;
+        public float[] meshAreaRatios, meshAreaGradients;
         public float minTriangleAreaRatio, maxPatchDisplacement, restoredMeshError;
         public int flippedTriangles, modifiedMeshes;
         public float forearmFront, handFront, upperProjection, foreProjection;
         public string layerPolicy, sdkSortingMode;
         public int[] actualSortingOrders;
+        public string[] nativeDistalIds;
+        public int[] nativeDistalSortingOrders;
         public Vector2[] attachmentControls;
         public string scope = "same-frame material markers, not anatomical truth; palm plane/fingers unknown";
     }
@@ -53,6 +59,7 @@ public sealed class WholeArmSession
     readonly ShoulderConnection connection;
     readonly Dictionary<CubismRenderer,int> distalOrders = new Dictionary<CubismRenderer,int>();
     public Readback Current;
+    public Pose ControlPose;
 
     public WholeArmSession(CubismModel target, string path)
     {
@@ -70,17 +77,50 @@ public sealed class WholeArmSession
         var skin = bindings.Single(b => b.id == "ArtMesh251");
         var fore = bindings.Single(b => b.id == "ArtMesh261");
         var hand = bindings.Single(b => b.id == "ArtMesh253");
-        connection = new ShoulderConnection(skin.rest, skin.triangles, fore.rest, fore.triangles, hand.rest, hand.triangles);
+        Vector2[] corrected=null;
+        if(input.correctedPatchNodes!=null && input.correctedPatchNodes.Length>0)
+        {
+            if(input.correctedPatchNodes.Length!=8) throw new ArgumentException("Expected four corrected patch nodes");
+            corrected=Enumerable.Range(0,4).Select(i=>new Vector2(input.correctedPatchNodes[2*i],input.correctedPatchNodes[2*i+1])).ToArray();
+            if(corrected.Any(p=>!Finite(p.x)||!Finite(p.y))) throw new ArgumentException("Nonfinite patch nodes");
+        }
+        connection = new ShoulderConnection(skin.rest, skin.triangles, fore.rest, fore.triangles, hand.rest, hand.triangles,corrected);
         foreach(var d in model.Drawables.Where(d=>new[]{"ArtMesh231","ArtMesh232","ArtMesh233","ArtMesh234","ArtMesh235","ArtMesh236","ArtMesh238"}.Contains(d.Id)))
         { var r=d.GetComponent<CubismRenderer>(); distalOrders[r]=r.MeshRenderer.sortingOrder; }
     }
     static bool Finite(float v) => !float.IsNaN(v) && !float.IsInfinity(v);
     static float Area(Vector3 a, Vector3 b, Vector3 c) => (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
 
+    // Local geometry derivative only; no mesh commit, Core/physics step or new
+    // binding. The controller uses a margin; actual safety remains in readback.
+    float[] MeasureAreas(Pose pose)
+    {
+        var areas=new List<float>();
+        foreach(var b in bindings)
+        {
+            float minimum=1;
+            var vertices=new Vector3[b.source.Length];
+            for(int i=0;i<vertices.Length;i++)
+            {
+                Vector2 p=connection.Deform(b.source[i],b.rest[i],b.id,pose.shoulder,pose.elbow,pose.wrist,pose.projection,input.rootedUpper);
+                vertices[i]=new Vector3(p.x,p.y,b.source[i].z);
+            }
+            for(int k=0;k<b.triangles.Length;k+=3)
+            {
+                int a=b.triangles[k],c=b.triangles[k+1],d=b.triangles[k+2];
+                float before=Area(b.source[a],b.source[c],b.source[d]);
+                if(Mathf.Abs(before)<1e-9f) continue;
+                minimum=Mathf.Min(minimum,Area(vertices[a],vertices[c],vertices[d])/before);
+            }
+            areas.Add(minimum);
+        }
+        return areas.ToArray();
+    }
+
     public void Apply(int frame)
     {
         if (frame >= input.poses.Length) throw new ArgumentException("Whole-arm sample count mismatch");
-        var pose = input.poses[frame];
+        var pose = ControlPose ?? input.poses[frame];
         if (!Finite(pose.shoulder) || !Finite(pose.elbow) || !Finite(pose.wrist) || !pose.projection.ReachValid || !pose.girdle.Valid)
             throw new ArgumentException("Invalid patch pose/projection");
         foreach (var b in bindings) b.source = b.drawable.VertexPositions;
@@ -88,6 +128,9 @@ public sealed class WholeArmSession
                           bindings.Single(b=>b.id=="ArtMesh261").source,
                           bindings.Single(b=>b.id=="ArtMesh253").source, pose.girdle);
         Current = new Readback { minTriangleAreaRatio=1, modifiedMeshes=bindings.Count };
+        Current.patchActuators=new[]{pose.shoulder,pose.elbow,pose.wrist};
+        Current.sourcePatchChain = connection.MaterialChain(id=>bindings.Single(b=>b.id==id).source)
+            .SelectMany(p=>new[]{p.x,p.y}).ToArray();
         Current.forearmFront=pose.forearmFront; Current.handFront=pose.handFront;
         Current.upperProjection=pose.projection.upperLength; Current.foreProjection=pose.projection.forearmLength;
         Current.layerPolicy=input.layerPolicy;
@@ -146,6 +189,16 @@ public sealed class WholeArmSession
             foreach(var b in bindings.Where(b=>SandboxArmGeometry.IsHand(b.id)||b.id=="ArtMesh261"))
                 b.renderer.MeshRenderer.sortingOrder=b.originalOrder+1000;
         }
+        if(input.nativeDistalFront)
+        {
+            // Explicit foreground presentation for native distal arm only.
+            // Not a depth-aware route; do not move the whole native clothing group.
+            int front=model.Drawables.Select(d=>d.GetComponent<CubismRenderer>().MeshRenderer.sortingOrder).Max()+100;
+            int lowest=distalOrders.Values.Min();
+            foreach(var pair in distalOrders) pair.Key.MeshRenderer.sortingOrder=front+pair.Value-lowest;
+        }
+        Current.nativeDistalIds=distalOrders.Keys.Select(r=>r.GetComponent<CubismDrawable>().Id).ToArray();
+        Current.nativeDistalSortingOrders=distalOrders.Keys.Select(r=>r.MeshRenderer.sortingOrder).ToArray();
         Current.attachmentControls=connection.AttachmentControls();
         Current.patchChain = connection.MaterialChain(id=>bindings.Single(b=>b.id==id).renderer.Mesh.vertices)
             .SelectMany(p=>new[]{p.x,p.y}).ToArray();
@@ -157,6 +210,24 @@ public sealed class WholeArmSession
             for(int i=0;i<marker.indices.Length;i++) p+=vertices[marker.indices[i]]*marker.weights[i];
             return new[]{p.x,p.y};
         }).ToArray();
+        if(Environment.GetEnvironmentVariable("ACTION_LAB_GEOMETRY_FEEDBACK")=="on")
+        {
+            Current.areaGradient=new float[3];
+            Current.meshAreaRatios=MeasureAreas(pose);
+            Current.meshAreaGradients=new float[bindings.Count*3];
+            for(int j=0;j<3;j++)
+            {
+                var probe=new Pose { shoulder=pose.shoulder,elbow=pose.elbow,wrist=pose.wrist,
+                    projection=pose.projection,girdle=pose.girdle };
+                if(j==0) probe.shoulder+=.2f;
+                if(j==1) probe.elbow+=.2f;
+                if(j==2) probe.wrist+=.2f;
+                var measured=MeasureAreas(probe);
+                Current.areaGradient[j]=(measured.Min()-Current.minTriangleAreaRatio)/.2f;
+                for(int k=0;k<measured.Length;k++)
+                    Current.meshAreaGradients[k*3+j]=(measured[k]-Current.meshAreaRatios[k])/.2f;
+            }
+        }
     }
 
     public void Restore()

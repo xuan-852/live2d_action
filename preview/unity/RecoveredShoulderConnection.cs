@@ -34,15 +34,20 @@ public sealed class ShoulderConnection
             throw new ArgumentException("shoulder material binding outside safe neighbourhood");
         return best;
     }
-    public ShoulderConnection(Vector3[] skin,int[] skinTriangles,Vector3[] fore,int[] foreTriangles,Vector3[] hand,int[] handTriangles)
+    public ShoulderConnection(Vector3[] skin,int[] skinTriangles,Vector3[] fore,int[] foreTriangles,Vector3[] hand,int[] handTriangles,
+        Vector2[] correctedNodes=null)
     {
         bodyA=Enumerable.Range(0,skin.Length).OrderByDescending(i=>skin[i].x).First();
         bodyB=Enumerable.Range(0,skin.Length).OrderByDescending(i=>skin[i].x).Skip(1).First();
-        int socketIndex=Enumerable.Range(0,skin.Length).OrderBy(i=>((Vector2)skin[i]-SandboxArmGeometry.Shoulder).sqrMagnitude).First();
-        socketBinding=new Point { ids=new[]{socketIndex,socketIndex,socketIndex},weights=new Vector3(1,0,0) };
-        elbowBinding=Bind(fore,foreTriangles,SandboxArmGeometry.Elbow);
-        wristBinding=Bind(hand,handTriangles,SandboxArmGeometry.Wrist);
-        palmBinding=Bind(hand,handTriangles,new Vector2(-.1972895f,.007617678f));
+        if(correctedNodes==null)
+        {
+            int socketIndex=Enumerable.Range(0,skin.Length).OrderBy(i=>((Vector2)skin[i]-SandboxArmGeometry.Shoulder).sqrMagnitude).First();
+            socketBinding=new Point { ids=new[]{socketIndex,socketIndex,socketIndex},weights=new Vector3(1,0,0) };
+        }
+        else socketBinding=Bind(skin,skinTriangles,correctedNodes[0]);
+        elbowBinding=Bind(fore,foreTriangles,correctedNodes==null?SandboxArmGeometry.Elbow:correctedNodes[1]);
+        wristBinding=Bind(hand,handTriangles,correctedNodes==null?SandboxArmGeometry.Wrist:correctedNodes[2]);
+        palmBinding=Bind(hand,handTriangles,correctedNodes==null?new Vector2(-.1972895f,.007617678f):correctedNodes[3]);
     }
     public void Update(Vector3[] skin,Vector3[] fore,Vector3[] hand,SecondaryArmGirdle value)
     {

@@ -7,6 +7,28 @@ from tools.control.pilot import Plant
 
 
 class NativeTargetTests(unittest.TestCase):
+    def test_bounded_fit_preserves_reachable_wrist_when_elbow_conflicts(self):
+        plant=Plant();model=plant.model
+        def forward(q):
+            model.set(dict(zip(NATIVE_KEYS,q)));a=plant.anchors.read()
+            return np.array([a[k] for k in ('shoulder','elbow','wrist','palm')])
+        initial=np.zeros(5);nodes=forward(initial)
+        c=NativeTargetController(forward,model,plant.anchors,initial,nodes,**speed_limits('fast'))
+        # Fixed node request reproducing the boundary case; no actuator solution
+        # supplied to the solver, and no requirement is removed or reweighted.
+        wrist=np.array([-.0590522736,.3604157423]);elbow=np.array([.0366799312,.2127760301])
+        palm=np.array([-.0776060429,.3862231293])
+        target=Target(wrist,1.,elbow=elbow,palm_heading=np.degrees(np.arctan2(*(palm-wrist)[::-1])))
+        goal,actual,residual=c._fit_endpoint(target,forward,initial)
+        components,reasons=c.endpoint_diagnostics(target,actual)
+        self.assertLess(components['wrist'],.001)
+        self.assertGreater(components['elbow'],.01)
+        self.assertLess(components['palmDegrees'],.2)
+        self.assertIn('elbow-target-limited',reasons)
+        self.assertNotIn('wrist-target-limited',reasons)
+        self.assertGreater(residual,1.)
+        self.assertTrue(np.all(goal>=c.lo) and np.all(goal<=c.hi))
+
     def test_large_finite_goal_does_not_bypass_node_speed_constraint(self):
         plant=Plant();model=plant.model
         def forward(q):

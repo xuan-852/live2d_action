@@ -40,6 +40,10 @@ def run(root, fit_requests=False):
             active_mode = row[row['active'] if row['active'] != 'both' else 'native'].get('mode', 'legacy')
             draw.text((12, 8), f"{root.name} | {row['time']:.3f}s | active: {row['active']} | {row['stage']} | mode {active_mode} | frame {i}", fill='black')
             draw.text((12, 28), '30 Hz offline SDK. Native=image right/anatomical left. Foreground native distal. Request diagram has fixed independent scale.' if fit_requests else '30 Hz action time, offline SDK. Full failures retained. Foreground native distal presentation.', fill='black')
+            if 'session' in row:
+                draw.rectangle((0,25,1536,45),fill='#eeeeee')
+                s=row['session']
+                draw.text((12,28),f"UPPER {s['requestId']} | phase {s['phase']} | ACTUAL {s['executionStatus']} | feedback age {row['time']-s['observationTime']:.3f}s | source {row.get('sourceTime')}",fill='black')
             for col, title in enumerate(('REQUEST (green) / NEXT FEASIBLE PREDICTION (blue)', 'FINAL SDK MATERIAL NODES (orange)', 'RAW SAME-FRAME IMAGE')):
                 draw.text((col*512+8, 52), title, fill='black')
             with Image.open(root/'capture'/f'{i:04}.png') as im:

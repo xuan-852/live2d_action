@@ -92,7 +92,7 @@ def fixture(side, stage, local, forward, home, absolute):
 
 def run(root, physics=False, context=False, only_side=None, visible_lift=False,
         profile=DEFAULT_PROFILE, speed_trial=False, point_trial=False, controller='timed', suite=False, request_stream=None,
-        native_five=False, native_limits=None):
+        native_five=False, native_limits=None, request_provider=None):
     limits = speed_limits(profile)
     native_limits = limits if native_limits is None else native_limits
     native_keys = NATIVE_KEYS if native_five else KEYS
@@ -105,6 +105,9 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
     for name in (__file__, 'tools/control/stateful_arm.py', 'tools/control/timed_arm.py', 'tools/control/native_target.py', 'preview/unity/LabMotion.cs',
                  'preview/unity/WholeArmSession.cs', 'preview/unity/RecoveredShoulderConnection.cs'):
         shutil.copy2(name, frozen/Path(name).name)
+    if request_provider is not None:
+        for name in request_provider.implementation_files:
+            shutil.copy2(name,frozen/Path(name).name)
     plant = Plant(); model = plant.model
     patch_home = np.array(json.loads((APPROVED/'protocol.json').read_text())['newNodes'])
     model.set({}); a = plant.anchors.read()
@@ -207,9 +210,13 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
     track = (root/'track.jsonl').open('w', encoding='utf-8')
     for i in range(count):
         packet = request_stream['frames'][i-1] if request_stream is not None and i else None
+        if i and request_provider is not None:
+            packet = request_provider.next(i*DT)
         context_requested = dict(zip(('ParamAngleX','ParamAngleY','ParamAngleZ','ParamBodyAngleX','ParamBodyAngleY','ParamBodyAngleZ'), packet['headBody'])) if packet is not None else {}
         if i:
             active, stage, local = schedule[i-1]
+            if request_provider is not None:
+                stage=packet['stage']
             for side in ('native', 'patch'):
                 home = native_home if side == 'native' else patch_home
                 if active in (side, 'both'):
@@ -252,6 +259,15 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
             controllers['patch'] = controller_type('patch', lambda q: patch_forward(source, q), [-56, 0, -100], [56, 145, 30],
                 np.zeros(3), actual['patch'], **limits, **controller_options)
             controllers['patch'].geometry = {k: frame['wholeArms'][k] for k in GEOMETRY_KEYS}
+            if request_provider is not None:
+                from tools.control.body_session import HEAD_BODY_IDS
+                request_provider.initialize(dict(time=0.,arms={s:dict(actual=actual[s].tolist(),applied=controllers[s].q.tolist()) for s in ('native','patch')},
+                    headBody=[applied[k] for k in HEAD_BODY_IDS],capabilities=dict(
+                        coordinateFrame='model-local-xy; x right y up',fps=30,
+                        native=dict(identity='anatomicalLeft / screenRight',actuators=native_keys,limits=native_limits),
+                        patch=dict(identity='anatomicalRight / screenLeft',actuators=['shoulder','elbow','wrist'],limits=limits,projection='identity'),
+                        headBody=dict(inputIds=HEAD_BODY_IDS,physics='original SDK, continuous fixed step'),
+                        unsupported=['independent shoulder translation','3D palm normal','finger targets'])))
             continue
         row = dict(frame=i, time=i*DT, active=active, stage=stage, localFrame=local,
             native=controllers['native'].observe([applied[k] for k in native_keys], actual['native']),
@@ -262,6 +278,10 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
         if packet is not None:
             row['sourceTime'] = packet.get('sourceTime')
             row['headBodyRequest'] = packet['headBody']
+        if request_provider is not None:
+            from tools.control.body_session import HEAD_BODY_IDS
+            row['physicalContext']={k:applied[k] for k in ('ParamBodyAngleX2','ParamBodyAngleY2','ParamBodyAngleZ2','Param251') if k in applied}
+            row['session']=request_provider.observe(row,[applied[k] for k in HEAD_BODY_IDS])
         rows.append(row); track.write(json.dumps(row)+'\n'); track.flush()
         if i % 60 == 0:
             print(i, active, stage, {s: (row[s]['status'], round(row[s]['wristError'], 4)) for s in ('native', 'patch')}, flush=True)

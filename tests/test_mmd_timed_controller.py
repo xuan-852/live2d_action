@@ -4,6 +4,21 @@ from tools.control.mmd_timed_controller import make_stream
 
 
 class MmdTimedInterfaceTests(unittest.TestCase):
+    def test_projection_request_keeps_source_shortening_below_actuator_limit(self):
+        doc=self.document()
+        for frame in doc['sides']['anatomicalRight']['frames']:
+            frame['target']=frame['target']|dict(palmProjectedRatio=.4)
+        home=np.array([[0.,0.],[0.,-1.],[0.,-2.],[0.,-2.2]])
+        old=make_stream(doc,dict(native=home,patch=home))
+        new=make_stream(doc,dict(native=home,patch=home),patch_projection=True)
+        for a,b in zip(old['frames'],new['frames']):
+            self.assertEqual(a['targets']['patch']['wrist'],b['targets']['patch']['wrist'])
+            self.assertEqual(a['targets']['patch']['elbow'],b['targets']['patch']['elbow'])
+            self.assertEqual(a['headBody'],b['headBody'])
+            if b['stage']=='mmd-source':
+                self.assertEqual(b['targets']['patch']['projection'],[.6,.8,.4])
+                self.assertNotIn('projection',b['targets']['native'])
+
     def document(self):
         target=dict(upperHeadingDeg=-70,forearmHeadingDeg=-50,palmHeadingDeg=-30,
                     upperProjectedRatio=.6,forearmProjectedRatio=.8)

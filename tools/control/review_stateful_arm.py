@@ -46,6 +46,9 @@ def run(root, fit_requests=False):
                 draw.text((12,28),f"UPPER {s['requestId']} | phase {s['phase']} | ACTUAL {s['executionStatus']} | feedback age {row['time']-s['observationTime']:.3f}s | source {row.get('sourceTime')}",fill='black')
             for col, title in enumerate(('REQUEST (green) / NEXT FEASIBLE PREDICTION (blue)', 'FINAL SDK MATERIAL NODES (orange)', 'RAW SAME-FRAME IMAGE')):
                 draw.text((col*512+8, 52), title, fill='black')
+            if 'projectionMeasured' in row['patch']:
+                p=row['patch'];fmt=lambda values:'/'.join(f'{v:.2f}' for v in values)
+                draw.text((12,65),f"FRONTAL LENGTH upper/forearm/palm | requested {fmt(p['projectionRequested'])} | actual mesh {fmt(p['projectionMeasured'])} | actuator {fmt(p['projectionApplied'])}",fill='black')
             with Image.open(root/'capture'/f'{i:04}.png') as im:
                 raw = im.convert('RGB').resize((512, 512))
                 canvas.paste(raw, (512, 76)); canvas.paste(raw, (1024, 76))
@@ -73,6 +76,9 @@ def run(root, fit_requests=False):
                     text = f"{side}: PASSED, CONTINUING | moving ref error {error:.4f} | waypoint residual {s['wristError']:.4f}"
                 draw.text((8, y), text, fill='black')
                 draw.text((660, y), ', '.join(s['reasons'])[:133] or 'within current checks', fill='#9c2424' if s['reasons'] else '#006b3c')
+            if 'palmBasisRequested' in row['patch']:
+                p=row['patch'];fmt=lambda v:'/'.join(f'{x:.2f}' for x in v)
+                draw.text((8,642),'PALM width/shear request '+fmt(p['palmBasisRequested'])+' | SDK applied '+fmt(p['palmBasisApplied'])+' | positive determinant; unavailable edge/back views reported',fill='black')
             proc.stdin.write(canvas.tobytes())
         proc.stdin.close(); error = proc.stderr.read(); code = proc.wait()
         if code:

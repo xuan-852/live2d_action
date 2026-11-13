@@ -22,6 +22,20 @@ def feedback(s,now,offset=0.,settled=True):
 
 
 class BodySessionTests(unittest.TestCase):
+    def test_projection_limit_prevents_false_settle_and_freeze_keeps_measured_length(self):
+        s=session();arms={x:nodes_goal(HOME) for x in ('native','patch')}
+        s.submit_pose('p',arms,[0.]*6,.1,DT);s.packet(DT)
+        row=dict(time=DT)
+        for side in ('native','patch'):
+            row[side]=dict(actual=HOME.tolist(),applied=[0.]*3,status='reached',reasons=[],
+                wristError=0.,elbowError=0.,palmErrorDeg=0.,terminalStateMet=True,positionReached=True)
+        row['patch'].update(projectionMeasured=[.85,.8,.65],projectionApplied=[.84,.8,.65],projectionResidual=[0.,0.,.1],
+            projectionStateMet=False,status='limited',reasons=['projection-target-limited'])
+        report=s.observe(row,[0.]*6)
+        self.assertFalse(report['settled'])
+        s.freeze('f',2*DT,.3);packet=s.packet(2*DT)
+        self.assertEqual(packet['targets']['patch']['projection'],[.85,.8,.65])
+
     def test_route_samples_and_timing_are_not_changed(self):
         s=session();arms={x:nodes_goal(HOME) for x in ('native','patch')}
         samples=[dict(time=i*DT,arms=copy.deepcopy(arms),headBody=[float(i),0,0,0,0,0]) for i in range(3)]

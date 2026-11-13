@@ -87,7 +87,11 @@ public sealed class ShoulderConnection
         {
             float weight=SandboxArmGeometry.CuffWeight(rest);Vector2 axis=(wristBase-elbowBase).normalized;
             Vector2 scaled=delta+axis*(Vector2.Dot(delta,axis)*(projection.forearmLength-1));
-            return wp+SandboxArmGeometry.Rotate(Vector2.Lerp(scaled,projected,weight),shoulder+elbow+weight*wrist);
+            // Palm plane is inside the garment opening: do not shear/squeeze
+            // the sleeve cross-section when the bare hand turns toward camera.
+            // Preserve the previously approved longitudinal/wrist cuff connection.
+            Vector2 cuffProjected=delta+palm*(along*(projection.palmLength-1));
+            return wp+SandboxArmGeometry.Rotate(Vector2.Lerp(scaled,cuffProjected,weight),shoulder+elbow+weight*wrist);
         }
         targets[0]=controls[0]+girdle.RootOffset;targets[1]=controls[1]+girdle.RootOffset;
         targets[2]=socket;targets[3]=ep;

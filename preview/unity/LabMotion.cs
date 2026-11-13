@@ -117,7 +117,10 @@ public static class LabMotion
         scene.Camera = new GameObject("LabCamera").AddComponent<Camera>();
         scene.Camera.orthographic = true;
         scene.Camera.transform.position = new Vector3(bounds.center.x, bounds.center.y, -10);
-        scene.Camera.orthographicSize = Mathf.Max(bounds.extents.y, bounds.extents.x) * 1.08f;
+        var marginText=Environment.GetEnvironmentVariable("ACTION_LAB_CAMERA_MARGIN");
+        float margin=string.IsNullOrEmpty(marginText)?1.08f:float.Parse(marginText,System.Globalization.CultureInfo.InvariantCulture);
+        if(float.IsNaN(margin)||float.IsInfinity(margin)||margin<1.08f||margin>2f)throw new ArgumentException("Lab camera margin");
+        scene.Camera.orthographicSize = Mathf.Max(bounds.extents.y, bounds.extents.x) * margin;
         scene.Camera.clearFlags = CameraClearFlags.SolidColor;
         scene.Camera.backgroundColor = new Color(0.18f, 0.2f, 0.24f, 1);
         scene.Camera.nearClipPlane = 0.01f;
@@ -393,7 +396,7 @@ public static class LabMotion
 
     [Serializable] public class StatefulCommand
     {
-        public float[] q, body, headBody;
+        public float[] q, body, headBody, nativeFingers, gaze, face;
         public WholeArmSession.Pose patch;
     }
 
@@ -434,6 +437,13 @@ public static class LabMotion
             string[] ids=fiveAxes?new[]{"Param94","Param95","Param97","Param98","Param99","ParamBodyAngleX","ParamBodyAngleY"}:
                 new[]{"Param94","Param97","Param99","ParamBodyAngleX","ParamBodyAngleY"};
             int nativeAxes=fiveAxes?5:3;
+            bool fingerControl=Environment.GetEnvironmentVariable("ACTION_LAB_NATIVE_FINGERS")=="on";
+            string[] fingerIds={"Param102","Param103","Param105","Param106","Param107"};
+            var previousFingers=new float[5];var previousFingerSteps=new float[5];
+            bool gazeControl=Environment.GetEnvironmentVariable("ACTION_LAB_GAZE")=="on";
+            string[] gazeIds={"ParamEyeBallX","ParamEyeBallY"};
+            var previousGaze=new float[2];var previousGazeSteps=new float[2];
+            var previousFace=new[]{1f,1f,0f,0f,0f,0f};var previousFaceSteps=new float[6];
             var speedText=Environment.GetEnvironmentVariable("ACTION_LAB_STATEFUL_PARAMETER_SPEED");
             float parameterSpeed=string.IsNullOrEmpty(speedText)?45f:
                 float.Parse(speedText,System.Globalization.CultureInfo.InvariantCulture);
@@ -475,6 +485,46 @@ public static class LabMotion
                         p.Value=v;
                     }
                 }
+                if(fingerControl)
+                {
+                    if(cmd.nativeFingers==null||cmd.nativeFingers.Length!=5)throw new ArgumentException("Native finger dimensions");
+                    for(int j=0;j<5;j++)
+                    {
+                        float v=cmd.nativeFingers[j],step=v-previousFingers[j];
+                        if(float.IsNaN(v)||float.IsInfinity(v)||v< -20.0001f||v>20.0001f||Mathf.Abs(step)>3.0001f||Mathf.Abs(step-previousFingerSteps[j])>.6001f)
+                            throw new ArgumentException("Native finger range/frame speed/acceleration");
+                        scene.Model.Parameters.Single(p=>p.Id==fingerIds[j]).Value=v;
+                        previousFingers[j]=v;previousFingerSteps[j]=step;
+                    }
+                }
+                else if(cmd.nativeFingers!=null)throw new ArgumentException("Native finger protocol not enabled");
+                if(gazeControl)
+                {
+                    if(cmd.gaze==null||cmd.gaze.Length!=2)throw new ArgumentException("Gaze dimensions");
+                    for(int j=0;j<2;j++)
+                    {
+                        float v=cmd.gaze[j],step=v-previousGaze[j];
+                        if(float.IsNaN(v)||float.IsInfinity(v)||Mathf.Abs(v)>.8001f||Mathf.Abs(step)>.1001f||Mathf.Abs(step-previousGazeSteps[j])>.0168f)
+                            throw new ArgumentException("Gaze range/frame speed/acceleration");
+                        scene.Model.Parameters.Single(p=>p.Id==gazeIds[j]).Value=v;
+                        previousGaze[j]=v;previousGazeSteps[j]=step;
+                    }
+                }
+                else if(cmd.gaze!=null)throw new ArgumentException("Gaze protocol not enabled");
+                if(Environment.GetEnvironmentVariable("ACTION_LAB_FACE")=="on")
+                {
+                    string[] faceIds={"ParamEyeLOpen","ParamEyeROpen","ParamMouthOpenY","ParamMouthForm","ParamEyeLSmile","ParamEyeRSmile"};
+                    if(cmd.face==null||cmd.face.Length!=faceIds.Length)throw new ArgumentException("Face dimensions");
+                    for(int j=0;j<faceIds.Length;j++)
+                    {
+                        var p=scene.Model.Parameters.Single(v=>v.Id==faceIds[j]);float v=cmd.face[j];float step=v-previousFace[j];
+                        if(float.IsNaN(v)||float.IsInfinity(v)||v<p.MinimumValue||v>p.MaximumValue)throw new ArgumentException("Face bounds");
+                        if(Mathf.Abs(step)>.1001f||Mathf.Abs(step-previousFaceSteps[j])>.0201f)throw new ArgumentException("Face frame speed/acceleration");
+                        p.Value=v;
+                        previousFace[j]=v;previousFaceSteps[j]=step;
+                    }
+                }
+                else if(cmd.face!=null)throw new ArgumentException("Face protocol not enabled");
                 scene.Whole.ControlPose=cmd.patch;
                 var requested=Snapshot(scene.Model);
                 if(physics && i>0) scene.Physics.OnLateUpdate();

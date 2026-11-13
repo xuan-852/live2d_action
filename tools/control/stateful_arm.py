@@ -57,10 +57,20 @@ class Target:
     mode: str = 'hold'
     velocity: np.ndarray = None
     angular_velocity: float = 0.
+    projection: np.ndarray = None
+    palm_basis: np.ndarray = None
 
     def __post_init__(self):
+        if self.palm_basis is not None:
+            self.palm_basis=np.asarray(self.palm_basis,float)
+            if self.palm_basis.shape!=(2,) or not np.isfinite(self.palm_basis).all():
+                raise ValueError('palm_basis requires finite width/shear, signed width retained for unsupported back faces')
         if self.frame != 'model-local-xy':
             raise ValueError('unsupported coordinate frame')
+        if self.projection is not None:
+            self.projection=np.asarray(self.projection,float)
+            if self.projection.shape!=(3,) or not np.isfinite(self.projection).all() or np.any(self.projection<0):
+                raise ValueError('projection requires three finite nonnegative frontal length ratios')
         for key in ('wrist', 'elbow', 'shoulder', 'velocity'):
             value = getattr(self, key)
             if value is not None:
@@ -119,6 +129,11 @@ def constrained_step(h, g, a, b):
                 active.pop(int(np.argmin(multipliers)))
                 if not active:
                     x = free.copy(); break
+    if len(g)>5:
+        # Six-axis mesh constraints can have many nearly parallel faces. Do not
+        # allocate exponential face combinations or return an unchecked iterate;
+        # the caller can use its independently checked finite-step fallback.
+        return np.zeros(len(g)),False
     candidates = []
     for size in range(1, len(g)+1):
         indices = np.array(list(combinations(range(len(b)), size)))
@@ -233,14 +248,19 @@ class ArmController:
         vhi = np.minimum(ns, self.velocity.ravel()*DT+na)
         a = np.vstack([np.eye(self.dof), -np.eye(self.dof), jac, -jac])
         b = np.r_[upper, -lower, vhi, -vlo]
+        task_rows=getattr(self,'task_linear_constraints',None)
         def mesh_constraint(a, b):
             if self.geometry is not None:
                 a = np.vstack([a, -mesh_gradients])
-                b = np.r_[b, mesh_areas-.55]
+                b = np.r_[b, mesh_areas-mesh_floor]
+            if task_rows is not None:
+                a=np.vstack([a,task_rows[0]]);b=np.r_[b,task_rows[1]]
             return a, b
         if self.geometry is not None:
             mesh_areas = np.asarray(self.geometry.get('meshAreaRatios', [self.geometry['minTriangleAreaRatio']]))
             mesh_gradients = np.asarray(self.geometry.get('meshAreaGradients', self.geometry['areaGradient'])).reshape(-1, self.dof)
+            planned_floor=getattr(self,'planned_mesh_floor',.55)
+            mesh_floor=np.maximum(.5,np.minimum(planned_floor,mesh_areas)) if getattr(self,'recover_mesh_margin',False) else np.full_like(mesh_areas,planned_floor)
         a, b = mesh_constraint(a, b)
         delta, feasible = constrained_step(h, g, a, b)
         # Sequential constraint linearization always uses the SAME frame origin
@@ -264,8 +284,25 @@ class ArmController:
             a, b = mesh_constraint(a, b)
             delta, feasible = constrained_step(h, g, a, b)
         reasons = list(self._policy_info.get('reasons', []))
+        def relax_task():
+            nonlocal task_rows
+            task_rows=None
+            reasons.append('palm-direction-envelope-not-enforced')
+            self._policy_info['palmDirectionConstraint']='relaxed'
+            aa,bb=mesh_constraint(np.vstack([np.eye(self.dof),-np.eye(self.dof),jac,-jac]),np.r_[upper,-lower,vhi,-vlo])
+            return constrained_step(h,g,aa,bb)
+        if not feasible and task_rows is not None:
+            delta,feasible=relax_task()
+        if target.projection is not None and not getattr(self,'supports_projection',False):
+            reasons.append('projection-control-unsupported')
+        if target.palm_basis is not None and not getattr(self,'palm_plane',False):
+            reasons.append('palm-plane-control-unsupported')
         def safe(d):
-            if self.geometry is not None and np.min(mesh_areas+mesh_gradients @ d) < .55-1e-6:
+            valid=getattr(self,'nonlinear_actuator_valid',None)
+            if valid is not None and not valid(q+d):return False
+            if task_rows is not None and np.any(task_rows[0]@d>task_rows[1]+1e-6):
+                return False
+            if self.geometry is not None and np.any(mesh_areas+mesh_gradients @ d < mesh_floor-1e-6):
                 return False
             movement = predict(q+d)-actual
             immediate = (np.max(np.linalg.norm(movement, axis=1)) <= self.node_speed*DT+1e-7 and
@@ -281,10 +318,11 @@ class ArmController:
             for k in range(1, steps+1):
                 next_step = d*(1-k/steps)
                 point = point+next_step
-                if self.geometry is not None and np.min(mesh_areas+mesh_gradients @ (point-q)) < .55-1e-6:
+                if self.geometry is not None and np.any(mesh_areas+mesh_gradients @ (point-q) < mesh_floor-1e-6):
                     return False
                 if np.any(point < self.lo-1e-7) or np.any(point > self.hi+1e-7):
                     return False
+                if valid is not None and not valid(point):return False
                 next_nodes = predict(point); moved = next_nodes-prior_nodes
                 if (np.max(np.linalg.norm(moved, axis=1)) > self.node_speed*DT+1e-7 or
                     np.max(np.linalg.norm(moved-prior_step, axis=1)) > self.node_acceleration*DT**2+1e-6):
@@ -297,6 +335,18 @@ class ArmController:
             # Jacobian across a Core piece boundary predicts the wrong motion.
             delta = finite.copy(); feasible = True
             self._policy_info['finiteTargetAccepted'] = True
+        if finite is not None and getattr(self,'coordinated_finite_step',False):
+            # A common fraction retains a valid convex palm-plane projection.
+            # Independent per-axis clipping can close width before shear stops.
+            nz=abs(finite)>1e-10
+            caps=np.where(finite[nz]>0,upper[nz],lower[nz])/finite[nz]
+            cap=min(1.,float(np.min(caps))) if len(caps) else 0.
+            for fraction in (1.,.9,.75,.5,.25,.1):
+                candidate=finite*max(0.,cap)*fraction
+                if safe(candidate):
+                    delta=candidate;feasible=True
+                    self._policy_info['coordinatedFiniteFraction']=max(0.,cap)*fraction
+                    break
         if not feasible or not safe(delta):
             # At a Core piece boundary a local derivative can have no feasible
             # solution although a nearby finite step does. Test a small LOCAL
@@ -310,6 +360,11 @@ class ArmController:
                 candidates += [np.clip(self.q_velocity*DT + axis*step, lower, upper)
                     for axis in np.eye(self.dof) for step in (-1., -.25, .25, 1.)]
             candidates = [d for d in candidates if safe(d)] if np.all(lower <= upper) else []
+            if not candidates and task_rows is not None:
+                relaxed,ok=relax_task()
+                alternatives=[relaxed,np.clip(self.q_velocity*DT,lower,upper)]
+                alternatives += [np.clip(relaxed*scale,lower,upper) for scale in (0.,.25,.5,.75)]
+                candidates=[d for d in alternatives if safe(d)] if np.all(lower<=upper) else []
             if candidates:
                 delta = min(candidates, key=lambda d: .5*d @ h @ d-g @ d)
                 feasible = True; reasons.append('nonlinear-feasibility-recovery')
@@ -365,7 +420,7 @@ class ArmController:
         reasons = self.last['reasons'].copy()
         if geometry is not None:
             gradient = np.asarray(geometry['areaGradient'])
-            if gradient.shape != (3,) or not np.isfinite(gradient).all() or not np.isfinite(geometry['minTriangleAreaRatio']):
+            if gradient.shape != (self.dof,) or not np.isfinite(gradient).all() or not np.isfinite(geometry['minTriangleAreaRatio']):
                 raise ValueError('invalid mesh geometry feedback')
             self.geometry = geometry
             if geometry['minTriangleAreaRatio'] < .5 or geometry['flippedTriangles']:

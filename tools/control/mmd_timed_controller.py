@@ -18,7 +18,7 @@ from tools.control.native_target import NATIVE_ROUTE_LIMITS
 from tools.expression import unity
 
 
-def make_stream(doc, homes):
+def make_stream(doc, homes,patch_projection=False,palm_branch=None,palm_reference=None):
     times, raw, _, _ = signals(doc)
     if len(times) < 2 or abs(times[0]) > 1e-8:
         raise ValueError('Expected source starting at zero with at least two samples')
@@ -54,6 +54,22 @@ def make_stream(doc, homes):
         packets.append(dict(stage='mmd-return' if i<30 else 'mmd-final-hold', sourceTime=None,
             headBody=(hb[-1]*max(0.,1-(i+1)/30)).tolist(),
             targets={s:target(homes[s], deadline, 'hold') for s in homes}))
+    if patch_projection:
+        frames=doc['sides']['anatomicalRight']['frames']
+        values=[[f['target'][k] for k in ('upperProjectedRatio','forearmProjectedRatio','palmProjectedRatio')] for f in frames]
+        for packet in packets:
+            if packet['sourceTime'] is not None:index=round(packet['sourceTime']/DT);ratios=values[index]
+            elif packet['stage']=='mmd-acquire':ratios=values[0]
+            else:ratios=[1.,1.,1.]
+            packet['targets']['patch']['projection']=list(ratios)
+    if palm_branch is not None or palm_reference is not None:
+        if not patch_projection:raise ValueError('palm plane requires projection')
+        from tools.control.palm_plane import palm_basis,bases_from_reference
+        frames=doc['sides']['anatomicalRight']['frames']
+        if palm_reference is not None and palm_branch is not None:raise ValueError('choose FK reference or explicit ambiguous branch')
+        bases=bases_from_reference(palm_reference,doc) if palm_reference is not None else [palm_basis(f['target']['palmProjectedRatio'],f['target']['palmNormalZ'],palm_branch).tolist() for f in frames]
+        for i,packet in enumerate(packets):
+            packet['targets']['patch']['palm_basis']=bases[0] if i<30 else bases[i-30] if i<30+len(bases) else [1.,0.]
     return dict(frames=packets, metadata=dict(sourceFile=doc['sourceFile'], sourceSHA=doc['sourceSha256'],
         sourceFrames=len(times), sourceTimes=times.tolist(), sourceOffsetSeconds=31*DT,
         mapping='historical absolute projected headings and model neutral lengths times UNCLIPPED source projection ratios; fixed roots',
@@ -63,14 +79,15 @@ def make_stream(doc, homes):
         headBody='unchanged frozen calibrate(raw), original limits, original SDK physics'))
 
 
-def execute(root, source, native_five=True, native_limits=None):
+def execute(root, source, native_five=True, native_limits=None,patch_projection=False,patch_rooted=False,palm_branch=None,palm_reference=None):
     if native_five and native_limits is None:
         native_limits=NATIVE_ROUTE_LIMITS.copy()
     doc = json.loads(source.read_text(encoding='utf-8-sig'))
     plant = Plant(); plant.model.set({}); a = plant.anchors.read()
     homes = dict(native=np.array([a[k] for k in ('shoulder','elbow','wrist','palm')]),
         patch=np.array(json.loads((APPROVED/'protocol.json').read_text())['newNodes']))
-    stream = make_stream(doc, homes)
+    reference=json.loads(palm_reference.read_text(encoding='utf-8-sig')) if palm_reference is not None else None
+    stream = make_stream(doc, homes,patch_projection=patch_projection,palm_branch=palm_branch,palm_reference=reference)
     root.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, root/'source-map.json')
     shutil.copy2(__file__, root/'mmd_timed_controller.py')
@@ -87,8 +104,21 @@ def execute(root, source, native_five=True, native_limits=None):
         protocol['nativeBackend']='calibrated five-axis; finite candidate checked in actual node space'
         protocol['velocityConvention']='executed source sample interval; first source velocity zero after acquisition'
         unity.write_spec(root/'acceptance-protocol.json',protocol)
-    run(root/'sdk', physics=True, request_stream=stream, native_five=native_five, native_limits=native_limits)
+    if patch_projection:
+        protocol=json.loads((root/'acceptance-protocol.json').read_text())
+        protocol['patchProjection']=dict(request='unclipped source upper/forearm/palm projected ratios',minimum=[.75,.55,.4],maximum=[1,1,1],tolerance=.03,
+            connection='existing rootedUpper' if patch_rooted else 'rigid MLS',
+            geometry='same-projection angular/reference guard; raw planning floor .30, actual>=.28; actual guard>=.5; flips0')
+        unity.write_spec(root/'acceptance-protocol.json',protocol)
+    if palm_branch is not None or palm_reference is not None:
+        protocol=json.loads((root/'acceptance-protocol.json').read_text())
+        protocol['palmPlane']=dict(source='length and palmNormalZ',shearBranch=palm_branch,branchEvidence='not observable from this sidecar; explicit two-candidate experiment',backFace='unsupported',noRetiming=True)
+        if palm_reference is not None:
+            shutil.copy2(palm_reference,root/'palm-reference.json')
+            protocol['palmPlane']=dict(source='existing 3D FK wrist and MCP basis; every frame matched against source map',reference=str(palm_reference),sha256=hashlib.sha256(palm_reference.read_bytes()).hexdigest(),backFace='unsupported',noRetiming=True)
+        unity.write_spec(root/'acceptance-protocol.json',protocol)
+    run(root/'sdk', physics=True, request_stream=stream, native_five=native_five, native_limits=native_limits,patch_projection=patch_projection,patch_rooted=patch_rooted,palm_plane=palm_branch is not None or palm_reference is not None)
 
 
 if __name__ == '__main__':
-    execute(Path(sys.argv[1]), Path(sys.argv[2]),native_five='--legacy-native' not in sys.argv)
+    execute(Path(sys.argv[1]), Path(sys.argv[2]),native_five='--legacy-native' not in sys.argv,patch_projection='--patch-projection' in sys.argv,patch_rooted='--patch-rooted' in sys.argv,palm_branch=1 if '--palm-positive' in sys.argv else -1 if '--palm-negative' in sys.argv else None,palm_reference=Path(sys.argv[sys.argv.index('--palm-reference')+1]) if '--palm-reference' in sys.argv else None)

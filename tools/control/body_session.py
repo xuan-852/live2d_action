@@ -36,6 +36,8 @@ class BodyExecutionSession:
         self.feedback=copy.deepcopy(feedback)
         self.capabilities=copy.deepcopy(feedback.get('capabilities',dict(coordinateFrame='model-local-xy',fps=30)))
         self.homes={s:nodes_goal(feedback['arms'][s]['actual']) for s in SIDES}
+        for side in SIDES:
+            if 'projection' in feedback['arms'][side]:self.homes[side]['projection']=copy.deepcopy(feedback['arms'][side]['projection'])
         self.home_context=np.array(feedback['headBody'],float)
 
     def describe(self):
@@ -97,6 +99,8 @@ class BodyExecutionSession:
     def freeze(self,identifier,now,deadline):
         if self.feedback is None:raise ValueError('Actual feedback required')
         arms={s:nodes_goal(self.feedback['arms'][s]['actual']) for s in SIDES}
+        for side in SIDES:
+            if 'projection' in self.feedback['arms'][side]:arms[side]['projection']=copy.deepcopy(self.feedback['arms'][side]['projection'])
         self.submit_pose(identifier,arms,self.feedback['headBody'],deadline,now,kind='freeze',reason='interrupted')
 
     def release(self,identifier,now,deadline):
@@ -147,8 +151,11 @@ class BodyExecutionSession:
             arms[side]=dict(actual=s['actual'],applied=s['applied'],velocity=velocity.tolist(),status=s['status'],
                 residuals={k:s[k] for k in ('wristError','elbowError','palmErrorDeg')},reasons=s['reasons'],
                 terminalStateMet=s['terminalStateMet'],positionReached=s['positionReached'])
+            if 'projectionMeasured' in s:
+                arms[side].update(projection=s['projectionMeasured'],projectionActuators=s['projectionApplied'],
+                    projectionStateMet=s['projectionStateMet'],projectionResidual=s['projectionResidual'])
             reasons.extend(side+':'+x for x in s['reasons'])
-        settled=all(x['positionReached'] and x['terminalStateMet'] for x in arms.values())
+        settled=all(x['positionReached'] and x['terminalStateMet'] and x.get('projectionStateMet',True) for x in arms.values())
         context_error=float(np.max(abs(np.array(head_body_actual)-self.last_packet['headBody'])))
         if context_error>.05:reasons.append('head-body-input-residual')
         settled=settled and context_error<=.05 and self.last_packet['session']['phase']!='source'

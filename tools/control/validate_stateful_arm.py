@@ -17,6 +17,7 @@ import numpy as np
 from tools.control.stateful_arm import ArmController, Target, patch_forward, bend, DT, speed_limits, DEFAULT_PROFILE
 from tools.control.timed_arm import TimedArmController
 from tools.control.native_target import NativeTargetController, NATIVE_KEYS
+from tools.control.patch_projection import PatchProjectionController,PatchProjectionPlant,PATCH_KEYS,PALM_PLANE_KEYS
 from tools.control.pilot import Plant
 from tools.expression import unity
 from tools.whole.batch import markers
@@ -29,8 +30,13 @@ GEOMETRY_KEYS = ('minTriangleAreaRatio', 'areaGradient', 'flippedTriangles', 'me
 
 
 def pose(q):
+    ratios=np.array([1.,1.,1.])
+    if len(q)>3:
+        ratios=1+np.asarray(q[3:6])/100;lo=np.array([.75,.55,.4])
+        if np.any(ratios<lo-1e-6) or np.any(ratios>1+1e-6):raise ValueError('Patch actuator projection out of bounds')
+        ratios=np.clip(ratios,lo,1) # only float32 readback roundoff, never a target projection
     return dict(zip(('shoulder', 'elbow', 'wrist'), map(float, q))) | {
-        'projection': dict(upperLength=1, forearmLength=1, palmLength=1, palmWidth=1, palmShear=0),
+        'projection': dict(upperLength=float(ratios[0]),forearmLength=float(ratios[1]),palmLength=float(ratios[2]),palmWidth=float(1+q[6]/100) if len(q)==8 else 1,palmShear=float(q[7]/100) if len(q)==8 else 0),
         'girdle': dict(rootX=0, rootY=0, socketX=0, socketY=0)}
 
 
@@ -92,9 +98,16 @@ def fixture(side, stage, local, forward, home, absolute):
 
 def run(root, physics=False, context=False, only_side=None, visible_lift=False,
         profile=DEFAULT_PROFILE, speed_trial=False, point_trial=False, controller='timed', suite=False, request_stream=None,
-        native_five=False, native_limits=None, request_provider=None):
+        native_five=False, native_limits=None, request_provider=None, patch_projection=False, projection_aware=True,patch_rooted=False,palm_plane=False,native_fingers=False,native_gaze=False,task_markers=None,face_control=False,camera_margin=None):
+    if camera_margin is not None and (not np.isfinite(camera_margin) or not 1.08<=camera_margin<=2.):raise ValueError('lab camera margin')
+    if native_gaze and request_stream is None:raise ValueError("gaze requires request clock stream")
+    if native_fingers and request_stream is None:raise ValueError("native fingers require request clock stream")
+    if palm_plane and not patch_projection:raise ValueError("palm plane requires mesh-consistent projection backend")
+    patch_dof=8 if palm_plane else 6
+    patch_keys=PALM_PLANE_KEYS if palm_plane else PATCH_KEYS
     limits = speed_limits(profile)
     native_limits = limits if native_limits is None else native_limits
+    if patch_rooted and not patch_projection:raise ValueError('Rooted connection requires the mesh-consistent patch backend')
     native_keys = NATIVE_KEYS if native_five else KEYS
     if controller not in ('legacy', 'normalized', 'timed'):
         raise ValueError('controller')
@@ -102,7 +115,14 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
     controller_options = {} if controller == 'legacy' else {'policy': controller}
     root.mkdir(parents=True, exist_ok=False)
     frozen = root/'implementation'; frozen.mkdir()
-    for name in (__file__, 'tools/control/stateful_arm.py', 'tools/control/timed_arm.py', 'tools/control/native_target.py', 'preview/unity/LabMotion.cs',
+    if face_control:shutil.copy2(Path(__file__).with_name('face_control.py'),frozen/'face_control.py')
+    if native_gaze:shutil.copy2(Path(__file__).with_name('gaze_control.py'),frozen/'gaze_control.py')
+    if native_fingers:shutil.copy2(Path(__file__).with_name('finger_control.py'),frozen/'finger_control.py')
+    if palm_plane:
+        shutil.copy2(Path(__file__).with_name('palm_plane.py'),frozen/'palm_plane.py')
+        shutil.copy2(unity.ROOT/'preview/unity/RecoveredArmTypes.cs',frozen/'RecoveredArmTypes.cs')
+        shutil.copy2(unity.ROOT/'preview/unity/RecoveredArmGeometry.cs',frozen/'RecoveredArmGeometry.cs')
+    for name in (__file__, 'tools/control/stateful_arm.py', 'tools/control/timed_arm.py', 'tools/control/native_target.py','tools/control/patch_projection.py', 'preview/unity/LabMotion.cs',
                  'preview/unity/WholeArmSession.cs', 'preview/unity/RecoveredShoulderConnection.cs'):
         shutil.copy2(name, frozen/Path(name).name)
     if request_provider is not None:
@@ -112,6 +132,7 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
     patch_home = np.array(json.loads((APPROVED/'protocol.json').read_text())['newNodes'])
     model.set({}); a = plant.anchors.read()
     native_home = np.array([a[k] for k in ('shoulder', 'elbow', 'wrist', 'palm')])
+    patch_model=PatchProjectionPlant(model,patch_home,rooted_upper=patch_rooted) if patch_projection else None
     def native_fixture(q):
         model.set(dict(zip(KEYS, q))); a = plant.anchors.read()
         return np.array([a[k] for k in ('shoulder', 'elbow', 'wrist', 'palm')])
@@ -184,29 +205,56 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
             nodeSpeed=native_limits['node_speed'], nodeAcceleration=native_limits['node_acceleration'],
             parameterSpeed=native_limits['speed'], parameterAcceleration=native_limits['acceleration']))
         unity.write_spec(root/'protocol.json', protocol)
-    patch = unity.write_spec(root/'patch.json', dict(nativeMarkers=markers(model, plant.anchors),
-        correctedPatchNodes=patch_home.ravel().tolist(), nativeDistalFront=True,
+    if patch_projection:
+        protocol=json.loads((root/'protocol.json').read_text())
+        protocol.update(projection='frontal lengths and optional palm transverse basis; original approved material bindings',
+            patchProjection=True,patchProjectionLimits=dict(minimum=[.75,.55,.4],maximum=[1,1,1],ratioTolerance=.03,palmDirectionWeight=3.,
+            units='angle degrees + (length ratio - 1)*100; same whole-frame budgets for all axes'))
+        if projection_aware:
+            protocol['patchGeometryGuard']=dict(metric='min(per-triangle same-projection angular ratio, projection-only area/expected determinant, raw*.55/.30)',
+                planned=.55,minimumActualGuard=.5,minimumActualRawArea=.28,plannedRawFloor=.30,flips=0)
+        if palm_plane:protocol['patchGeometryGuard']['handRawPlanningFloor']=.36
+        protocol['actuators']['patch']=patch_keys
+        protocol['palmPlane']=dict(enabled=palm_plane,widthBounds=[.35,1],shearBounds=[-.95,.95],basisTolerance=.03,missingBasis='identity',backFace='unsupported; signed request retained')
+        protocol['patchConnection']='existing rootedUpper distributed shoulder angle' if patch_rooted else 'rigid MLS'
+        unity.write_spec(root/'protocol.json',protocol)
+    if native_fingers:
+        protocol=json.loads((root/'protocol.json').read_text())
+        protocol['nativeFingers']=dict(ids=['Param102','Param103','Param105','Param106','Param107'],range=[-20,20],speed=90,acceleration=540,error=.15,settledSpeed=.5,mode='reachBy point pose; not finger route tracking',patch='unsupported')
+        unity.write_spec(root/'protocol.json',protocol)
+    if native_gaze:
+        protocol=json.loads((root/'protocol.json').read_text())
+        protocol['gaze']=dict(ids=['ParamEyeBallX','ParamEyeBallY'],range=[-.8,.8],speed=3.,acceleration=15.,scope='authored eye inputs; not a calibrated 3D sight ray')
+        unity.write_spec(root/'protocol.json',protocol)
+    patch = unity.write_spec(root/'patch.json', dict(nativeMarkers=markers(model, plant.anchors),taskMarkers=task_markers or [],
+        correctedPatchNodes=patch_home.ravel().tolist(), nativeDistalFront=True,rootedUpper=patch_rooted,
         poses=[pose([0, 0, 0]) for _ in range(count)]))
     bridge = root/'bridge'; bridge.mkdir(); output = root/'capture'; errors = []
     def capture():
         try:
-            unity.run('LabMotion.RunStatefulControl', output, dict(ACTION_LAB_MODEL=unity.model3_path(),
+            unity.run('LabMotion.RunStatefulControl', output, dict(ACTION_LAB_CAMERA_MARGIN='' if camera_margin is None else camera_margin,ACTION_LAB_FACE='on' if face_control else 'off',ACTION_LAB_GAZE='on' if native_gaze else 'off',ACTION_LAB_NATIVE_FINGERS='on' if native_fingers else 'off',ACTION_LAB_PALM_PLANE='on' if palm_plane else 'off',ACTION_LAB_MODEL=unity.model3_path(),
                 ACTION_LAB_PATCH=patch, ACTION_LAB_LAYER_FRAME='', ACTION_LAB_PHYSICS_OVERRIDE='',
                 ACTION_LAB_CONTROL_FRAMES=count, ACTION_LAB_CONTROL_BRIDGE=bridge,
                 ACTION_LAB_STATEFUL_PARAMETER_SPEED=native_limits['speed'],
                 ACTION_LAB_STATEFUL_NATIVE_AXES=5 if native_five else 3,
                 ACTION_LAB_GEOMETRY_FEEDBACK='on',
+                ACTION_LAB_PATCH_PROJECTION='on' if patch_projection else 'off',
+                ACTION_LAB_PATCH_AREA_MODE='projection-local' if patch_projection and projection_aware else 'absolute',
                 ACTION_LAB_STATEFUL_PHYSICS='on' if physics else 'off'), root/'capture.log', timeout=1800)
         except Exception as exc:
             errors.append(exc)
     thread = threading.Thread(target=capture); thread.start()
-    commands = {'native': np.zeros(len(native_keys)), 'patch': np.zeros(3)}
+    commands = {'native': np.zeros(len(native_keys)), 'patch': np.zeros(patch_dof if patch_projection else 3)}
+    finger_controller=None;gaze_controller=None;face_controller=None
     controllers = {}; rows = []; applied = {}; context_requested = {}; source = patch_home.copy()
     inactive_deadline = {'native': None, 'patch': None}
     def native_predict(q):
         model.set(applied | context_requested | dict(zip(native_keys, q)))
         a = plant.anchors.read()
         return np.array([a[k] for k in ('shoulder', 'elbow', 'wrist', 'palm')])
+    def patch_predict(q):
+        patch_model.set_context(applied|context_requested)
+        return patch_model.forward(q)
     track = (root/'track.jsonl').open('w', encoding='utf-8')
     for i in range(count):
         packet = request_stream['frames'][i-1] if request_stream is not None and i else None
@@ -237,6 +285,12 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
         command = dict(q=commands['native'].tolist(), patch=pose(commands['patch']), body=body)
         if packet is not None:
             command['headBody'] = packet['headBody']
+        if native_fingers:
+            command['nativeFingers']=finger_controller.command(**packet['nativeFingerGoal'],now=i*DT).tolist() if i else [0.]*5
+        if native_gaze:
+            command['gaze']=gaze_controller.command(**packet['gazeGoal'],now=i*DT).tolist() if i else [0.,0.]
+        if face_control:
+            command['face']=face_controller.command(packet['faceGoal'],i*DT).tolist() if i else [1.,1.,0.,0.,0.,0.]
         unity.write_spec(temp, command); temp.replace(path)
         start = time.monotonic()
         while not (bridge/f'{i:04}.ready').exists():
@@ -249,32 +303,76 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
         applied = {v['id']: v['value'] for v in frame['applied']}
         source[:] = np.array(frame['wholeArms']['sourcePatchChain']).reshape(4, 2)
         actual = {s: np.array(frame['wholeArms'][s+'Chain']).reshape(4, 2) for s in ('native', 'patch')}
+        geometry={k:frame['wholeArms'][k] for k in GEOMETRY_KEYS}
+        if patch_projection and projection_aware:
+            geometry['minTriangleAreaRatio']=frame['wholeArms']['geometryGuardAreaRatio']
+            geometry['rawMinTriangleAreaRatio']=frame['wholeArms']['minTriangleAreaRatio']
         if i == 0:
+            if face_control:
+                from tools.control.face_control import FaceController,FACE_IDS
+                face_controller=FaceController([applied[k] for k in FACE_IDS])
+            if native_gaze:
+                from tools.control.gaze_control import GazeController,GAZE_IDS
+                gaze_controller=GazeController([applied[k] for k in GAZE_IDS])
+            if native_fingers:
+                from tools.control.finger_control import FingerController,FINGER_IDS
+                finger_controller=FingerController([applied[k] for k in FINGER_IDS])
             if native_five:
                 controllers['native'] = NativeTargetController(native_predict, model, plant.anchors,
                     [applied[k] for k in native_keys], actual['native'], **native_limits)
             else:
                 controllers['native'] = controller_type('native', native_predict, [-29.5, -29.8, -30], [59.5, 29.8, 30],
                     [applied[k] for k in native_keys], actual['native'], **limits, **controller_options)
-            controllers['patch'] = controller_type('patch', lambda q: patch_forward(source, q), [-56, 0, -100], [56, 145, 30],
-                np.zeros(3), actual['patch'], **limits, **controller_options)
-            controllers['patch'].geometry = {k: frame['wholeArms'][k] for k in GEOMETRY_KEYS}
+            if patch_projection:
+                patch_model.set_context(applied)
+                controllers['patch']=PatchProjectionController(patch_predict,lambda:patch_model.raw_nodes.copy(),
+                    np.zeros(patch_dof),actual['patch'],**limits)
+            else:
+                controllers['patch'] = controller_type('patch', lambda q: patch_forward(source, q), [-56, 0, -100], [56, 145, 30],
+                    np.zeros(3), actual['patch'], **limits, **controller_options)
+            controllers['patch'].geometry = geometry
             if request_provider is not None:
                 from tools.control.body_session import HEAD_BODY_IDS
-                request_provider.initialize(dict(time=0.,arms={s:dict(actual=actual[s].tolist(),applied=controllers[s].q.tolist()) for s in ('native','patch')},
+                request_provider.initialize(dict(time=0.,arms={s:dict(actual=actual[s].tolist(),applied=controllers[s].q.tolist(),
+                    **({'projection':frame['wholeArms']['projectedLengthRatios']} if s=='patch' and patch_projection else {})) for s in ('native','patch')},
                     headBody=[applied[k] for k in HEAD_BODY_IDS],capabilities=dict(
                         coordinateFrame='model-local-xy; x right y up',fps=30,
                         native=dict(identity='anatomicalLeft / screenRight',actuators=native_keys,limits=native_limits),
-                        patch=dict(identity='anatomicalRight / screenLeft',actuators=['shoulder','elbow','wrist'],limits=limits,projection='identity'),
+                        patch=dict(identity='anatomicalRight / screenLeft',actuators=patch_keys if patch_projection else ['shoulder','elbow','wrist'],
+                            limits=limits,projection='frontal lengths' if patch_projection else 'identity',
+                            connection='rootedUpper' if patch_rooted else 'rigid MLS'),
                         headBody=dict(inputIds=HEAD_BODY_IDS,physics='original SDK, continuous fixed step'),
-                        unsupported=['independent shoulder translation','3D palm normal','finger targets'])))
+                        unsupported=['independent shoulder translation','3D palm normal','patch finger targets']+([] if native_fingers else ['native finger targets']),
+                        nativeFingers=bool(native_fingers),gaze=bool(native_gaze),face=bool(face_control))))
             continue
+        if patch_projection:
+            controllers['patch'].actual_source_nodes=source.copy()
         row = dict(frame=i, time=i*DT, active=active, stage=stage, localFrame=local,
             native=controllers['native'].observe([applied[k] for k in native_keys], actual['native']),
             patch=controllers['patch'].observe(frame['wholeArms']['patchActuators'], actual['patch'],
-                {k: frame['wholeArms'][k] for k in GEOMETRY_KEYS}),
+                geometry),
             geometry={k: frame['wholeArms'][k] for k in ('minTriangleAreaRatio', 'flippedTriangles', 'restoredMeshError')},
             pairing=frame['pairingMaxDelta'], body=body)
+        if patch_projection and projection_aware:
+            row['geometry']['rawMinTriangleAreaRatio']=row['geometry']['minTriangleAreaRatio']
+            row['geometry']['minTriangleAreaRatio']=frame['wholeArms']['geometryGuardAreaRatio']
+            row['geometry']['guardMode']=frame['wholeArms']['geometryGuardMode']
+        if face_control:
+            from tools.control.face_control import FACE_IDS
+            row['face']=face_controller.observe([applied[k] for k in FACE_IDS])
+        if native_gaze:
+            from tools.control.gaze_control import GAZE_IDS
+            row['gaze']=gaze_controller.observe([applied[k] for k in GAZE_IDS])
+        if task_markers:
+            values=np.array(frame['wholeArms']['taskMarkerPoints']).reshape(-1,2)
+            row['taskMarkers']=dict(zip(frame['wholeArms']['taskMarkerIds'],values.tolist()))
+        if packet is not None and 'intent' in packet:row['intent']=packet['intent']
+        if native_fingers:
+            from tools.control.finger_control import FINGER_IDS
+            row['nativeFingers']=finger_controller.observe([applied[k] for k in FINGER_IDS])
+            row['nativeFingerMeshes']=[g for g in frame['drawables'] if g['id'] in ('ArtMesh230','ArtMesh231','ArtMesh233','ArtMesh234','ArtMesh235')]
+        if palm_plane:
+            row['patch']['palmAffineReadback']=frame['wholeArms']['palmAffineReadback']
         if packet is not None:
             row['sourceTime'] = packet.get('sourceTime')
             row['headBodyRequest'] = packet['headBody']

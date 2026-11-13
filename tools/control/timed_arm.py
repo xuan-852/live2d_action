@@ -66,7 +66,7 @@ class TimedArmController(ArmController):
         # repeated identical packets would restart the connection every frame.
         return (target.mode, round(float(target.time), 8), vector(target.wrist), vector(target.elbow),
                 None if target.palm_heading is None else round(target.palm_heading, 7),
-                target.branch, vector(target.velocity), round(target.angular_velocity, 7))
+                target.branch, vector(target.velocity), round(target.angular_velocity, 7),vector(target.projection))
 
     def _fit_endpoint(self, target, predict, q):
         # Two local seeds only, no parameter inventory/grid scan. The elbow seed

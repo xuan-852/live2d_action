@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 namespace ActionLab.Recovered {
 /// <summary>Positive, bounded frontal projection; no palm/back reflection or new texture.</summary>
 [System.Serializable] public struct SecondaryArmProjection
@@ -14,6 +14,10 @@ namespace ActionLab.Recovered {
     // Version 4: shared source-arm scale may lengthen the originally short upper
     // segment. Actual triangles are still checked before any mesh is committed.
     public bool ReachValid => In(upperLength,.75f,1.7f)&&In(forearmLength,.55f,1)&&In(palmLength,.55f,1)&&In(palmWidth,.35f,1)&&In(palmShear,-.2f,.2f);
+    // Opt-in frontal control only. Positive palm scaling has positive determinant;
+    // cuff/attachment distortion is independently checked by the mesh guard.
+    public bool FrontalControlValid => In(upperLength,.75f,1)&&In(forearmLength,.55f,1)&&In(palmLength,.4f,1)&&In(palmWidth,.35f,1)&&In(palmShear,-.2f,.2f);
+    public bool PalmPlaneControlValid => In(upperLength,.75f,1)&&In(forearmLength,.55f,1)&&In(palmLength,.4f,1)&&In(palmWidth,.35f,1)&&In(palmShear,-.95f,.95f);
     public bool IsIdentity => upperLength==1&&forearmLength==1&&palmLength==1&&palmWidth==1&&palmShear==0;
     public static SecondaryArmProjection Lerp(SecondaryArmProjection a,SecondaryArmProjection b,float w) => new SecondaryArmProjection {
         upperLength=Mathf.Lerp(a.upperLength,b.upperLength,w),forearmLength=Mathf.Lerp(a.forearmLength,b.forearmLength,w),

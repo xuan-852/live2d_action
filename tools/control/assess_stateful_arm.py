@@ -7,6 +7,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.expression.unity import write_spec
 
 
+def pose_task_met(s,gates):
+    return (s['wristError'] <= gates['wristError'] and
+        (s['elbowError'] is None or s['elbowError'] <= gates['elbowError']) and
+        (s['palmErrorDeg'] is None or s['palmErrorDeg'] <= gates['palmErrorDeg']) and
+        s.get('projectionStateMet',True) and s.get('palmBasisStateMet',True) and
+        (s.get('mode') != 'hold' or s.get('commonHoldSettled',True)))
+
+
 def assess(root):
     protocol = json.loads((root/'protocol.json').read_text())
     rows = [json.loads(line) for line in (root/'track.jsonl').read_text().splitlines()]
@@ -34,16 +42,15 @@ def assess(root):
             selected = [r for r in rows if r['active'] in (side, 'both') and r['stage'] == stage]
             def met(record):
                 s = record[side]
-                return (s['wristError'] <= gates['wristError'] and
-                        (s['elbowError'] is None or s['elbowError'] <= gates['elbowError']) and
-                        (s['palmErrorDeg'] is None or s['palmErrorDeg'] <= gates['palmErrorDeg']) and
-                        (s.get('mode') != 'hold' or s.get('commonHoldSettled', True)))
+                return pose_task_met(s,gates)
             continuity = all(r[side]['metrics']['maxNodeSpeed'] <= gates['nodeSpeed']+.001 and
                 r[side]['metrics']['maxNodeAcceleration'] <= gates['nodeAcceleration']+.001 and
                 r[side]['metrics']['maxParameterStep'] <= gates['parameterSpeed']/30+.001 and
                 r[side]['metrics']['maxParameterAcceleration'] <= gates['parameterAcceleration']+.001 for r in selected)
             geometry = all(r['geometry']['minTriangleAreaRatio'] >= gates['minTriangleAreaRatio'] and
-                           r['geometry']['flippedTriangles'] == 0 for r in selected)
+                           r['geometry']['flippedTriangles'] == 0 and
+                           r['geometry'].get('rawMinTriangleAreaRatio',1)>=protocol.get('patchGeometryGuard',{}).get('minimumActualRawArea',0)
+                           for r in selected)
             pairing = all(r['pairing'] <= gates['pairing'] and r['geometry']['restoredMeshError'] <= gates['restore'] for r in selected)
             windows = {}
             if stage in ('lift-hold-lower', 'visible-lift-hold-lower'):

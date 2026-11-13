@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Offline expression plan; referents resolved against registered scene",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "text", "target", "affect", "utteranceSeconds"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 80},
+    "kind": {"enum": ["listen", "say", "reference", "think", "decline", "cancel"]},
+    "text": {"type": "string", "maxLength": 500},
+    "target": {"type": "string", "minLength": 1},
+    "affect": {"enum": ["neutral", "warm", "uncertain", "firm"]},
+    "utteranceSeconds": {"type": "number", "minimum": 0, "maximum": 20}
+  }
+}

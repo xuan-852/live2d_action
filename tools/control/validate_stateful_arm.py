@@ -98,7 +98,8 @@ def fixture(side, stage, local, forward, home, absolute):
 
 def run(root, physics=False, context=False, only_side=None, visible_lift=False,
         profile=DEFAULT_PROFILE, speed_trial=False, point_trial=False, controller='timed', suite=False, request_stream=None,
-        native_five=False, native_limits=None, request_provider=None, patch_projection=False, projection_aware=True,patch_rooted=False,palm_plane=False,native_fingers=False,native_gaze=False,task_markers=None,face_control=False,camera_margin=None):
+        native_five=False, native_limits=None, request_provider=None, patch_projection=False, projection_aware=True,patch_rooted=False,palm_plane=False,native_fingers=False,native_gaze=False,task_markers=None,face_control=False,camera_margin=None,command_timeout=60):
+    if not np.isfinite(command_timeout) or not 60<=command_timeout<=1800:raise ValueError('command timeout')
     if camera_margin is not None and (not np.isfinite(camera_margin) or not 1.08<=camera_margin<=2.):raise ValueError('lab camera margin')
     if native_gaze and request_stream is None:raise ValueError("gaze requires request clock stream")
     if native_fingers and request_stream is None:raise ValueError("native fingers require request clock stream")
@@ -232,7 +233,7 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
     bridge = root/'bridge'; bridge.mkdir(); output = root/'capture'; errors = []
     def capture():
         try:
-            unity.run('LabMotion.RunStatefulControl', output, dict(ACTION_LAB_CAMERA_MARGIN='' if camera_margin is None else camera_margin,ACTION_LAB_FACE='on' if face_control else 'off',ACTION_LAB_GAZE='on' if native_gaze else 'off',ACTION_LAB_NATIVE_FINGERS='on' if native_fingers else 'off',ACTION_LAB_PALM_PLANE='on' if palm_plane else 'off',ACTION_LAB_MODEL=unity.model3_path(),
+            unity.run('LabMotion.RunStatefulControl', output, dict(ACTION_LAB_COMMAND_TIMEOUT=command_timeout,ACTION_LAB_CAMERA_MARGIN='' if camera_margin is None else camera_margin,ACTION_LAB_FACE='on' if face_control else 'off',ACTION_LAB_GAZE='on' if native_gaze else 'off',ACTION_LAB_NATIVE_FINGERS='on' if native_fingers else 'off',ACTION_LAB_PALM_PLANE='on' if palm_plane else 'off',ACTION_LAB_MODEL=unity.model3_path(),
                 ACTION_LAB_PATCH=patch, ACTION_LAB_LAYER_FRAME='', ACTION_LAB_PHYSICS_OVERRIDE='',
                 ACTION_LAB_CONTROL_FRAMES=count, ACTION_LAB_CONTROL_BRIDGE=bridge,
                 ACTION_LAB_STATEFUL_PARAMETER_SPEED=native_limits['speed'],
@@ -259,7 +260,12 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
     for i in range(count):
         packet = request_stream['frames'][i-1] if request_stream is not None and i else None
         if i and request_provider is not None:
-            packet = request_provider.next(i*DT)
+            try:packet = request_provider.next(i*DT)
+            except BaseException:
+                abort_path=bridge/f'{i:04}.command.json';abort_temp=abort_path.with_suffix('.tmp')
+                unity.write_spec(abort_temp,dict(abort=True));abort_temp.replace(abort_path)
+                thread.join(timeout=30)
+                raise
         context_requested = dict(zip(('ParamAngleX','ParamAngleY','ParamAngleZ','ParamBodyAngleX','ParamBodyAngleY','ParamBodyAngleZ'), packet['headBody'])) if packet is not None else {}
         if i:
             active, stage, local = schedule[i-1]
@@ -307,6 +313,8 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
         if patch_projection and projection_aware:
             geometry['minTriangleAreaRatio']=frame['wholeArms']['geometryGuardAreaRatio']
             geometry['rawMinTriangleAreaRatio']=frame['wholeArms']['minTriangleAreaRatio']
+        if request_provider is not None and hasattr(request_provider,'set_execution_context'):
+            request_provider.set_execution_context(dict(applied),source.copy())
         if i == 0:
             if face_control:
                 from tools.control.face_control import FaceController,FACE_IDS

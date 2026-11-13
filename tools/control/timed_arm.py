@@ -61,6 +61,11 @@ class TimedArmController(ArmController):
 
     @staticmethod
     def _signature(target):
+        # A body-following pose keeps one actuator endpoint/clock while its
+        # material-node coordinates follow the changing body context. Only the
+        # lower realization layer supplies this key; scene-space routes do not.
+        if target.connection_key is not None:
+            return ('body-following-hold',target.connection_key,round(float(target.time),8))
         vector = lambda x: None if x is None else tuple(np.round(x, 8))
         # Ignore clock reconstruction roundoff, not actual goal changes. Otherwise
         # repeated identical packets would restart the connection every frame.

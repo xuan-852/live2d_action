@@ -28,15 +28,19 @@ def validate_plan(value,scene):
 
 
 class DialogueBody:
-    def __init__(self,scene):
+    def __init__(self,scene,auto_release=True):
         self.scene=copy.deepcopy(scene);self.session=BodyExecutionSession()
+        self.auto_release=bool(auto_release)
         self.plan=None;self.events=[];self.ids=set();self.last_tick=None
         self.fallback=None;self.idle_released=False
 
     def initialize(self,feedback):self.session.initialize(feedback)
 
-    def submit(self,value,now):
+    def submit(self,value,now,head_body=None,reach_seconds=None):
         p=validate_plan(value,self.scene)
+        context=None if head_body is None else self.session._context(head_body)
+        if reach_seconds is not None and (isinstance(reach_seconds,bool) or not isinstance(reach_seconds,(int,float)) or not math.isfinite(reach_seconds) or not .3<=reach_seconds<=5.):raise ValueError('reach seconds')
+        if p['kind']=='cancel' and context is not None and np.max(abs(context))>1e-8:raise ValueError('cancel releases to home context')
         if p['id'] in self.ids:raise ValueError('duplicate plan id')
         if self.session.feedback is None:raise ValueError('SDK actual feedback required')
         if not math.isfinite(now) or now<self.session.feedback['time']:raise ValueError('stale plan clock')
@@ -64,6 +68,8 @@ class DialogueBody:
         self.deadline=now+(1.4 if self.gesture!='neutral' else .9)
         if p['kind']=='reference' and obj.get('pointing') is not None:
             self.deadline=now+obj['pointing'].get('reachSeconds',1.4)
+        if context is not None:hb=context
+        if reach_seconds is not None:self.deadline=now+reach_seconds
         if p['kind']=='cancel':
             self.session.release(p['id'],now,self.deadline);self.gaze=[0.,0.]
         else:self.session.submit_pose(p['id'],arms,hb,self.deadline,now)
@@ -78,7 +84,7 @@ class DialogueBody:
 
     def next(self,now):
         if self.plan is None:raise ValueError('expression plan required')
-        if not self.idle_released and now>=self.end+.45 and self.plan['kind'] not in ('listen','cancel'):
+        if self.auto_release and not self.idle_released and now>=self.end+.45 and self.plan['kind'] not in ('listen','cancel'):
             self._release(now,'utterance-finished')
         packet=self.session.packet(now);p=self.plan
         speaking=bool(now<self.end and p['kind'] in ('say','reference','decline'))

@@ -59,8 +59,11 @@ class Target:
     angular_velocity: float = 0.
     projection: np.ndarray = None
     palm_basis: np.ndarray = None
+    connection_key: str = None
 
     def __post_init__(self):
+        if self.connection_key is not None and (not isinstance(self.connection_key,str) or not self.connection_key or len(self.connection_key)>160 or self.mode!='hold'):
+            raise ValueError('connection key requires a named body-following hold')
         if self.palm_basis is not None:
             self.palm_basis=np.asarray(self.palm_basis,float)
             if self.palm_basis.shape!=(2,) or not np.isfinite(self.palm_basis).all():

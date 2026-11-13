@@ -396,6 +396,7 @@ public static class LabMotion
 
     [Serializable] public class StatefulCommand
     {
+        public bool abort;
         public float[] q, body, headBody, nativeFingers, gaze, face;
         public WholeArmSession.Pose patch;
     }
@@ -451,16 +452,24 @@ public static class LabMotion
                 throw new ArgumentException("Stateful speed budget");
             float frameSlew=parameterSpeed/30f;
             float[] previous=new float[nativeAxes];
+            var timeoutText=Environment.GetEnvironmentVariable("ACTION_LAB_COMMAND_TIMEOUT");
+            double commandTimeout=string.IsNullOrEmpty(timeoutText)?60:double.Parse(timeoutText,System.Globalization.CultureInfo.InvariantCulture);
+            if(double.IsNaN(commandTimeout)||double.IsInfinity(commandTimeout)||commandTimeout<60||commandTimeout>1800)throw new ArgumentException("Lab command timeout");
             for(int i=0;i<count;i++)
             {
                 string path=Path.Combine(bridge,i.ToString("D4")+".command.json");
                 var wait=Stopwatch.StartNew();
                 while(!File.Exists(path))
                 {
-                    if(wait.Elapsed.TotalSeconds>60) throw new TimeoutException("Stateful command "+i);
+                    if(wait.Elapsed.TotalSeconds>commandTimeout) throw new TimeoutException("Stateful command "+i);
                     System.Threading.Thread.Sleep(5);
                 }
                 var cmd=JsonUtility.FromJson<StatefulCommand>(ReadStatefulCommand(path));
+                if(cmd.abort)
+                {
+                    File.WriteAllText(Path.Combine(output,"aborted.json"),"{\"nextFrame\":"+i+",\"reason\":\"provider failed\"}");
+                    Finish(scene,output,"aborted provider; partial capture only");EditorApplication.Exit(1);return;
+                }
                 if(cmd.q==null || cmd.q.Length!=nativeAxes || cmd.body==null || cmd.body.Length!=2 || cmd.patch==null)
                     throw new ArgumentException("Stateful dimensions");
                 float[] values=cmd.q.Concat(cmd.body).ToArray();

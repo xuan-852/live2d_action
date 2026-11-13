@@ -11,20 +11,24 @@ class FaceController:
     hi=np.ones(6)
 
     def __init__(self,applied):
-        self.q=self.vector(applied);self.velocity=np.zeros(6)
+        self.q=self.vector(applied);self.velocity=np.zeros(len(self.q))
+        if len(self.q)==8:
+            self.lo=np.r_[self.lo,[-1.,-1.]];self.hi=np.ones(8)
 
     @staticmethod
     def vector(value):
         q=np.array(value,float)
-        if q.shape!=(6,) or not np.isfinite(q).all():raise ValueError('six finite face inputs required')
+        if q.shape not in ((6,),(8,)) or not np.isfinite(q).all():raise ValueError('six or eight finite face inputs required')
         return q
 
     def command(self,values,now):
         goal=self.vector(values)
         if np.any(goal<self.lo) or np.any(goal>self.hi):raise ValueError('face goal out of range')
-        a=17.9/900;v=3/30
-        low=np.maximum.reduce([np.full(6,-v),self.velocity/30-a,-stop_cap(self.q-self.lo,a,v)])
-        high=np.minimum.reduce([np.full(6,v),self.velocity/30+a,stop_cap(self.hi-self.q,a,v)])
+        if goal.shape!=self.q.shape:raise ValueError('face dimensions changed')
+        a=np.full(len(goal),17.9/900);v=np.full(len(goal),3/30)
+        if len(goal)==8:a[:2]=179./900;v[:2]=12./30
+        low=np.maximum.reduce([-v,self.velocity/30-a,-stop_cap(self.q-self.lo,a,v)])
+        high=np.minimum.reduce([v,self.velocity/30+a,stop_cap(self.hi-self.q,a,v)])
         self.conflict=bool(np.any(low>high+1e-6))
         if self.conflict:raise ValueError('face stopping constraints conflict')
         error=goal-self.q
@@ -36,7 +40,9 @@ class FaceController:
         actual=self.vector(applied);velocity=(actual-self.q)*30
         acceleration=(velocity-self.velocity)*30
         reasons=[]
-        if max(abs(velocity))>3.001 or max(abs(acceleration))>18.001:reasons.append('actual-face-continuity-violation')
+        vlim=np.full(len(actual),3.001);alim=np.full(len(actual),18.001)
+        if len(actual)==8:vlim[:2]=12.001;alim[:2]=180.001
+        if np.any(abs(velocity)>vlim) or np.any(abs(acceleration)>alim):reasons.append('actual-face-continuity-violation')
         if max(abs(actual-self.commanded))>.001:reasons.append('actual-face-command-residual')
         settled=bool(max(abs(actual-self.goal))<.02 and max(abs(velocity))<.05)
         self.q=actual;self.velocity=velocity

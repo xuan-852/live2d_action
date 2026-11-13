@@ -444,7 +444,7 @@ public static class LabMotion
             bool gazeControl=Environment.GetEnvironmentVariable("ACTION_LAB_GAZE")=="on";
             string[] gazeIds={"ParamEyeBallX","ParamEyeBallY"};
             var previousGaze=new float[2];var previousGazeSteps=new float[2];
-            var previousFace=new[]{1f,1f,0f,0f,0f,0f};var previousFaceSteps=new float[6];
+            var previousFace=new[]{1f,1f,0f,0f,0f,0f,0f,0f};var previousFaceSteps=new float[8];
             var speedText=Environment.GetEnvironmentVariable("ACTION_LAB_STATEFUL_PARAMETER_SPEED");
             float parameterSpeed=string.IsNullOrEmpty(speedText)?45f:
                 float.Parse(speedText,System.Globalization.CultureInfo.InvariantCulture);
@@ -522,13 +522,15 @@ public static class LabMotion
                 else if(cmd.gaze!=null)throw new ArgumentException("Gaze protocol not enabled");
                 if(Environment.GetEnvironmentVariable("ACTION_LAB_FACE")=="on")
                 {
-                    string[] faceIds={"ParamEyeLOpen","ParamEyeROpen","ParamMouthOpenY","ParamMouthForm","ParamEyeLSmile","ParamEyeRSmile"};
-                    if(cmd.face==null||cmd.face.Length!=faceIds.Length)throw new ArgumentException("Face dimensions");
-                    for(int j=0;j<faceIds.Length;j++)
+                    string[] faceIds={"ParamEyeLOpen","ParamEyeROpen","ParamMouthOpenY","ParamMouthForm","ParamEyeLSmile","ParamEyeRSmile","ParamBrowLY","ParamBrowRY"};
+                    if(cmd.face==null||(cmd.face.Length!=6&&cmd.face.Length!=8))throw new ArgumentException("Face dimensions");
+                    for(int j=0;j<cmd.face.Length;j++)
                     {
                         var p=scene.Model.Parameters.Single(v=>v.Id==faceIds[j]);float v=cmd.face[j];float step=v-previousFace[j];
                         if(float.IsNaN(v)||float.IsInfinity(v)||v<p.MinimumValue||v>p.MaximumValue)throw new ArgumentException("Face bounds");
-                        if(Mathf.Abs(step)>.1001f||Mathf.Abs(step-previousFaceSteps[j])>.0201f)throw new ArgumentException("Face frame speed/acceleration");
+                        float speed=(cmd.face.Length==8&&j<2)?.4001f:.1001f;
+                        float acceleration=(cmd.face.Length==8&&j<2)?.2001f:.0201f;
+                        if(Mathf.Abs(step)>speed||Mathf.Abs(step-previousFaceSteps[j])>acceleration)throw new ArgumentException("Face frame speed/acceleration");
                         p.Value=v;
                         previousFace[j]=v;previousFaceSteps[j]=step;
                     }

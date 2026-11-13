@@ -98,7 +98,7 @@ def fixture(side, stage, local, forward, home, absolute):
 
 def run(root, physics=False, context=False, only_side=None, visible_lift=False,
         profile=DEFAULT_PROFILE, speed_trial=False, point_trial=False, controller='timed', suite=False, request_stream=None,
-        native_five=False, native_limits=None, request_provider=None, patch_projection=False, projection_aware=True,patch_rooted=False,palm_plane=False,native_fingers=False,native_gaze=False,task_markers=None,face_control=False,camera_margin=None,command_timeout=60):
+        native_five=False, native_limits=None, request_provider=None, patch_projection=False, projection_aware=True,patch_rooted=False,palm_plane=False,native_fingers=False,native_gaze=False,task_markers=None,face_control=False,camera_margin=None,command_timeout=60,face_expression=False):
     if not np.isfinite(command_timeout) or not 60<=command_timeout<=1800:raise ValueError('command timeout')
     if camera_margin is not None and (not np.isfinite(camera_margin) or not 1.08<=camera_margin<=2.):raise ValueError('lab camera margin')
     if native_gaze and request_stream is None:raise ValueError("gaze requires request clock stream")
@@ -114,6 +114,10 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
         raise ValueError('controller')
     controller_type = ArmController if controller == 'legacy' else TimedArmController
     controller_options = {} if controller == 'legacy' else {'policy': controller}
+    from tools.control.face_control import FACE_IDS
+    from tools.control.face_expression import EXTENDED_FACE_IDS
+    face_ids=EXTENDED_FACE_IDS if face_expression else FACE_IDS
+    if face_expression and not face_control:raise ValueError('face expression requires face control')
     root.mkdir(parents=True, exist_ok=False)
     frozen = root/'implementation'; frozen.mkdir()
     if face_control:shutil.copy2(Path(__file__).with_name('face_control.py'),frozen/'face_control.py')
@@ -296,7 +300,7 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
         if native_gaze:
             command['gaze']=gaze_controller.command(**packet['gazeGoal'],now=i*DT).tolist() if i else [0.,0.]
         if face_control:
-            command['face']=face_controller.command(packet['faceGoal'],i*DT).tolist() if i else [1.,1.,0.,0.,0.,0.]
+            command['face']=face_controller.command(packet['faceGoal'],i*DT).tolist() if i else [1.,1.]+[0.]*(len(face_ids)-2)
         unity.write_spec(temp, command); temp.replace(path)
         start = time.monotonic()
         while not (bridge/f'{i:04}.ready').exists():
@@ -318,7 +322,7 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
         if i == 0:
             if face_control:
                 from tools.control.face_control import FaceController,FACE_IDS
-                face_controller=FaceController([applied[k] for k in FACE_IDS])
+                face_controller=FaceController([applied[k] for k in face_ids])
             if native_gaze:
                 from tools.control.gaze_control import GazeController,GAZE_IDS
                 gaze_controller=GazeController([applied[k] for k in GAZE_IDS])
@@ -367,7 +371,7 @@ def run(root, physics=False, context=False, only_side=None, visible_lift=False,
             row['geometry']['guardMode']=frame['wholeArms']['geometryGuardMode']
         if face_control:
             from tools.control.face_control import FACE_IDS
-            row['face']=face_controller.observe([applied[k] for k in FACE_IDS])
+            row['face']=face_controller.observe([applied[k] for k in face_ids])
         if native_gaze:
             from tools.control.gaze_control import GAZE_IDS
             row['gaze']=gaze_controller.observe([applied[k] for k in GAZE_IDS])

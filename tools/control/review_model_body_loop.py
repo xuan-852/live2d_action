@@ -8,7 +8,7 @@ import imageio_ffmpeg
 from tools.control.review_intent_expression import affine
 from tools.control.embodied_plan import POSTURE_KEYS
 from tools.control.body_session import HEAD_BODY_IDS
-from tools.control.face_control import FACE_IDS
+from tools.control.face_expression import EXTENDED_FACE_IDS
 from tools.control.finger_control import FINGER_IDS
 from tools.control.gaze_control import GAZE_IDS
 from tools.expression.unity import write_spec
@@ -40,7 +40,7 @@ def assess(root):
         applied={v['id']:v['value'] for v in f['applied']}
         for side in ('native','patch'):
             readback_error=max(readback_error,float(max(abs(np.array(r[side]['actual']).ravel()-f['wholeArms'][side+'Chain']))))
-        for name,ids in [('nativeFingers',FINGER_IDS),('gaze',GAZE_IDS),('face',FACE_IDS)]:
+        for name,ids in [('nativeFingers',FINGER_IDS),('gaze',GAZE_IDS),('face',EXTENDED_FACE_IDS[:len(r['face']['applied'])])]:
             readback_error=max(readback_error,float(max(abs(np.array(r[name]['applied'])-[applied[k] for k in ids]))))
         readback_error=max(readback_error,float(max(abs(np.array(r['session']['headBodyActual'])-[applied[k] for k in HEAD_BODY_IDS]))))
         hand_ids={'ArtMesh'+str(i) for i in range(230,237)}

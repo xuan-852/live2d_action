@@ -36,10 +36,11 @@ def validate_reply(reply,request,scene):
 class Provider:
     implementation_files=[__file__,'tools/control/embodied_plan.py','tools/control/dialogue_body.py',
         'tools/control/body_session.py','tools/control/task_scene.py','tools/control/task_expression.py',
-        'tools/control/face_control.py','tools/control/gesture_exploration.py','tools/control/intent_expression_trial.py',
+        'tools/control/face_control.py','tools/control/face_expression.py','tools/control/gesture_exploration.py','tools/control/intent_expression_trial.py',
         'tools/control/opencode_model_client.py','tools/control/body_following_targets.py']
 
-    def __init__(self,root,scene,client=None):
+    def __init__(self,root,scene,client=None,face_expression=False):
+        self.face_expression=face_expression
         self.root=root;self.mailbox=root/'model-mailbox';self.mailbox.mkdir()
         self.exec=EmbodiedExecution(scene);self.scene=scene;self.history=[];self.packets=[]
         self.messages=[dict(role='user',text=INITIAL)];self.query_reason='initial-user-request'
@@ -131,6 +132,9 @@ class Provider:
                 self.exec.submit(safe,now);self.guards.append(dict(time=now,reason='model-decision-budget-exhausted',modelGenerated=False))
             else:self._query(now,reason)
         packet=self.exec.next(now)
+        if self.face_expression:
+            from tools.control.face_expression import face_goal
+            packet['faceGoal']=face_goal(packet,now,self.exec.body.accepted)
         if self.body_following is not None:packet=self.body_following.realize(packet,self.exec.plan,released=self.exec.body.idle_released)
         if self.client is not None:packet['intent']['origin']='independent model service generated plan; actual SDK feedback in next request'
         if self.budget_stop:packet['intent']['origin']='mechanical driver safety stop, NOT model-generated'
@@ -157,14 +161,14 @@ class Provider:
         return report
 
 
-def execute(root,source,config=None,provider='a6api2',model='deepseek-v4.1-flash'):
+def execute(root,source,config=None,provider='a6api2',model='deepseek-v4.1-flash',face_expression=False):
     root.mkdir(parents=True,exist_ok=False);scene,markers,preflight=build_scene(source)
     for key in scene:scene[key]['armReferenceFrame']='body-following material pose' if key=='E' else 'model-local fixed scene target'
     client=None
     if config is not None:
         from tools.control.opencode_model_client import OpenCodeModelClient
         client=OpenCodeModelClient(config,provider,model)
-    p=Provider(root,scene,client);shutil.copy2(source,root/'source-map.json')
+    p=Provider(root,scene,client,face_expression=face_expression);shutil.copy2(source,root/'source-map.json')
     if client is not None:write_spec(root/'model-service.json',client.public_info())
     write_spec(root/'scene.json',scene);write_spec(root/'core-preflight.json',preflight)
     write_spec(root/'acceptance-protocol.json',dict(frames=721,fps=30,duration=24,physics=True,cameraMargin=1.5,
@@ -176,7 +180,7 @@ def execute(root,source,config=None,provider='a6api2',model='deepseek-v4.1-flash
         visualAcceptance=False,realTime=False,productionServices=False))
     run(root/'sdk',physics=True,request_stream=dict(frames=[dict(stage='live-model-provider') for _ in range(720)],metadata=dict(driver='model/actual-SDK feedback mailbox')),
         request_provider=p,native_five=True,native_limits=NATIVE_ROUTE_LIMITS.copy(),native_fingers=True,
-        native_gaze=True,face_control=True,task_markers=markers,camera_margin=1.5,command_timeout=600)
+        native_gaze=True,face_control=True,task_markers=markers,camera_margin=1.5,command_timeout=600,face_expression=face_expression)
     write_spec(root/'model-history.json',dict(decisions=p.history,messages=p.messages,finished=p.finished,
         interrupted=p.interrupted,probeFailed=p.probe_failed,bodyEvents=p.exec.body.events,
         budgetExhausted=p.budget_stop,driverGuards=p.guards,modelFinished=p.finished and not p.budget_stop))
@@ -184,4 +188,4 @@ def execute(root,source,config=None,provider='a6api2',model='deepseek-v4.1-flash
 
 
 if __name__=='__main__':execute(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]) if len(sys.argv)>3 else None,
-                             sys.argv[4] if len(sys.argv)>4 else 'a6api2',sys.argv[5] if len(sys.argv)>5 else 'deepseek-v4.1-flash')
+                             sys.argv[4] if len(sys.argv)>4 else 'a6api2',sys.argv[5] if len(sys.argv)>5 else 'deepseek-v4.1-flash',len(sys.argv)>6 and sys.argv[6]=='expressive-face')
